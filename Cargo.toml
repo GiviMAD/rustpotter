@@ -1,0 +1,13 @@
+[package]
+name = "rustpotter"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "A personal keywords spotter written in Rust"
+
+[dependencies]
+log = "0.4.6"
+simple-matrix = "0.1"
+rustfft = "6.0.1"
+savefile = "0.10.1"
+savefile-derive = "0.10.1"
