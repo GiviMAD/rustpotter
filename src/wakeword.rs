@@ -18,6 +18,7 @@ pub struct WakewordModel {
     pub samples_per_shift: usize,
     pub num_coefficients: usize,
     pub pre_emphasis_coefficient: f32,
+    threshold: Option<f32>,
     templates: Vec<Vec<Vec<f32>>>,
 }
 impl WakewordModel {
@@ -31,6 +32,7 @@ impl WakewordModel {
         samples_per_shift: usize,
         num_coefficients: usize,
         pre_emphasis_coefficient: f32,
+        threshold: Option<f32>,
     ) -> Self {
         WakewordModel {
             keyword,
@@ -42,6 +44,7 @@ impl WakewordModel {
             samples_per_shift,
             num_coefficients,
             pre_emphasis_coefficient,
+            threshold,
         }
     }
 }
@@ -50,14 +53,13 @@ impl Wakeword {
         model: WakewordModel,
         enable_average: bool,
         enabled: bool,
-        threshold: Option<f32>,
     ) -> Wakeword {
         let mut wakeword = Wakeword {
             averaged_template: None,
             templates: model.templates.to_vec(),
             enable_average: enable_average,
             enabled: enabled,
-            threshold: threshold,
+            threshold: model.threshold,
         };
         if enable_average {
             wakeword.average_templates();

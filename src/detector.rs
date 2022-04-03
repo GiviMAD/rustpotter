@@ -156,7 +156,6 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
         path: String,
         enable_average: bool,
         enabled: bool,
-        threshold: Option<f32>,
     ) -> Result<(), String> {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
         if model.sample_rate != self.sample_rate {
@@ -196,7 +195,7 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
             ));
         }
         let keyword = model.keyword.clone();
-        let wakeword = Wakeword::from_model(model, enable_average, enabled, threshold);
+        let wakeword = Wakeword::from_model(model, enable_average, enabled);
         self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
         self.keywords.insert(keyword, wakeword);
         Ok(())
@@ -268,6 +267,7 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
                 self.samples_per_shift,
                 self.num_coefficients,
                 self.pre_emphasis_coefficient,
+                keyword.unwrap().get_threshold(),
             );
             Ok(model)
         }
