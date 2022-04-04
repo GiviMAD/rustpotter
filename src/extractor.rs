@@ -2,9 +2,6 @@ use log::debug;
 use rustfft::{num_complex::Complex32, FftPlanner};
 use simple_matrix::Matrix;
 use std::iter;
-pub trait FeatureExtractorListener {
-    fn on_features_segment(&mut self, features: Vec<f32>);
-}
 pub struct FeatureExtractor {
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
@@ -19,7 +16,13 @@ pub struct FeatureExtractor {
     max_frequency: usize,
 }
 impl FeatureExtractor {
-    pub fn new(sample_rate: usize, samples_per_frame: usize, samples_per_shift: usize, num_coefficients: usize, pre_emphasis_coefficient: f32) -> Self {
+    pub fn new(
+        sample_rate: usize,
+        samples_per_frame: usize,
+        samples_per_shift: usize,
+        num_coefficients: usize,
+        pre_emphasis_coefficient: f32,
+    ) -> Self {
         let mut extractor = FeatureExtractor {
             samples: vec![],
             sample_rate,
@@ -39,26 +42,18 @@ impl FeatureExtractor {
     fn get_magnitude_spectrum_size(&self) -> usize {
         self.samples_per_frame / 2
     }
-    pub fn process_buffer(
-        &mut self,
-        audio_buffer: &[u8],
-        listener: &mut dyn FeatureExtractorListener,
-    ) {
+    pub fn process_buffer(&mut self, audio_buffer: &[u8]) -> Vec<Vec<f32>> {
         // Remove extra bytes
         let mut buffer_copy = audio_buffer.to_vec();
         let new_len = audio_buffer.len() - (audio_buffer.len() % self.block_size);
         buffer_copy.truncate(new_len);
         buffer_copy
             .chunks_exact(self.block_size)
-            .for_each(|buffer_part| {
-                self.process_buffer_part(listener, buffer_part);
-            });
+            .map(|buffer_part| {
+                self.process_buffer_part(buffer_part)
+            }).filter(Option::is_some).map(Option::unwrap).collect()
     }
-    pub fn process_audio(
-        &mut self,
-        audio_buffer: &[i16],
-        listener: &mut dyn FeatureExtractorListener,
-    ) {
+    pub fn process_audio(&mut self, audio_buffer: &[i16]) -> Vec<Vec<f32>> {
         // Remove extra bytes
         let mut buffer_copy = audio_buffer.to_vec();
         let int_block_size = self.block_size / 2;
@@ -68,36 +63,29 @@ impl FeatureExtractor {
         }
         buffer_copy
             .chunks_exact(int_block_size)
-            .for_each(|audio_part| {
-                self.process_audio_part(audio_part, listener);
-            });
+            .map(|audio_part| {
+                self.process_audio_part(audio_part)
+            }).filter(Option::is_some).map(Option::unwrap).collect()
     }
-    fn process_buffer_part(
-        &mut self,
-        listener: &mut dyn FeatureExtractorListener,
-        audio_bytes: &[u8],
-    ) {
+    fn process_buffer_part(&mut self, audio_bytes: &[u8]) -> Option<Vec<f32>> {
         let audio_buffer = audio_bytes
             .chunks_exact(2)
             .into_iter()
             .map(|bytes| i16::from_ne_bytes([bytes[0], bytes[1]]))
             .collect::<Vec<_>>();
-        self.process_audio_part(&audio_buffer, listener);
+        self.process_audio_part(&audio_buffer)
     }
-    fn process_audio_part(
-        &mut self,
-        audio_buffer: &[i16],
-        listener: &mut dyn FeatureExtractorListener,
-    ) {
+    fn process_audio_part(&mut self, audio_buffer: &[i16]) -> Option<Vec<f32>> {
         let mut new_samples = self.pre_emphasis(&audio_buffer);
         if self.samples.len() >= self.samples_per_frame {
             self.samples.drain(0..new_samples.len());
             self.samples.append(&mut new_samples);
             let features = self.extract_features(&self.samples[0..self.samples_per_frame]);
             debug!("Features: {:?}", features);
-            listener.on_features_segment(features);
+            Some(features)
         } else {
             self.samples.append(&mut new_samples);
+            None
         }
     }
     fn extract_features(&self, samples: &[f32]) -> Vec<f32> {
@@ -111,7 +99,9 @@ impl FeatureExtractor {
         for i in 0..audio_buffer.len() {
             let current = audio_buffer[i];
             let previous = if i != 0 { audio_buffer[i - 1] } else { 0 };
-            let transformed = convert_int16_to_float32(current as f32 - self.pre_emphasis_coefficient * previous as f32);
+            let transformed = convert_int16_to_float32(
+                current as f32 - self.pre_emphasis_coefficient * previous as f32,
+            );
             samples.push(transformed)
         }
 

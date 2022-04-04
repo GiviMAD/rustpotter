@@ -1,9 +1,10 @@
 use crate::comparator::FeatureComparator;
-use crate::extractor::{FeatureExtractor, FeatureExtractorListener};
+use crate::extractor::FeatureExtractor;
 use crate::wakeword::{Wakeword, WakewordModel};
 use log::{debug, info, warn};
 use savefile::{load_file, save_file, save_to_mem};
 use std::path::Path;
+use std::thread;
 use std::{collections::HashMap, fs};
 pub struct FeatureDetectorBuilder {
     threshold: Option<f32>,
@@ -13,6 +14,8 @@ pub struct FeatureDetectorBuilder {
     frame_shift_ms: Option<usize>,
     num_coefficients: Option<usize>,
     pre_emphasis_coefficient: Option<f32>,
+    comparator_band_size: Option<usize>,
+    comparator_ref: Option<f32>,
 }
 impl FeatureDetectorBuilder {
     pub fn new() -> Self {
@@ -24,11 +27,12 @@ impl FeatureDetectorBuilder {
             frame_shift_ms: None,
             num_coefficients: None,
             pre_emphasis_coefficient: None,
+            comparator_band_size: None,
+            comparator_ref: None,
         }
     }
-    pub fn build<T: FnMut(DetectedWakeword)>(&self, on_event: T) -> FeatureDetector<T> {
+    pub fn build(&self) -> FeatureDetector {
         FeatureDetector::new(
-            on_event,
             self.get_threshold(),
             self.get_sample_rate(),
             self.get_bit_length(),
@@ -36,6 +40,8 @@ impl FeatureDetectorBuilder {
             self.get_samples_per_shift(),
             self.get_num_coefficients(),
             self.get_pre_emphasis_coefficient(),
+            self.get_comparator_band_size(),
+            self.get_comparator_ref(),
         )
     }
     pub fn get_threshold(&self) -> f32 {
@@ -58,6 +64,12 @@ impl FeatureDetectorBuilder {
     }
     pub fn get_pre_emphasis_coefficient(&self) -> f32 {
         self.pre_emphasis_coefficient.unwrap_or(0.97)
+    }
+    pub fn get_comparator_band_size(&self) -> usize {
+        self.comparator_band_size.unwrap_or(5)
+    }
+    pub fn get_comparator_ref(&self) -> f32 {
+        self.comparator_ref.unwrap_or(0.22)
     }
     pub fn get_samples_per_frame(&self) -> usize {
         self.get_sample_rate() * self.get_frame_length_ms() / 1000
@@ -86,9 +98,14 @@ impl FeatureDetectorBuilder {
     pub fn set_pre_emphasis_coefficient(&mut self, value: f32) {
         self.pre_emphasis_coefficient = Some(value);
     }
+    pub fn set_comparator_band_size(&mut self, value: usize) {
+        self.comparator_band_size = Some(value);
+    }
+    pub fn set_comparator_ref(&mut self, value: f32) {
+        self.comparator_ref = Some(value);
+    }
 }
-pub struct FeatureDetector<T> where T: FnMut(DetectedWakeword) {
-    on_event: T,
+pub struct FeatureDetector {
     // options
     threshold: f32,
     sample_rate: usize,
@@ -97,25 +114,19 @@ pub struct FeatureDetector<T> where T: FnMut(DetectedWakeword) {
     samples_per_shift: usize,
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
+    comparator_band_size: usize,
+    comparator_ref: f32,
     // state
     buffering: bool,
     min_frames: usize,
     max_frames: usize,
     frames: Vec<Vec<f32>>,
     keywords: HashMap<String, Wakeword>,
-    comparator: FeatureComparator,
     result_state: Option<DetectedWakeword>,
     extractor: FeatureExtractor,
-    extractor_listener: FeatureExtractorAggregator,
 }
-impl<'a, T: FnMut(DetectedWakeword)> FeatureExtractorListener for FeatureDetector<T> {
-    fn on_features_segment(&mut self, features: Vec<f32>) {
-        self.process_features(features);
-    }
-}
-impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
+impl FeatureDetector {
     pub fn new(
-        on_event: T,
         threshold: f32,
         sample_rate: usize,
         bit_length: usize,
@@ -123,9 +134,10 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
         samples_per_shift: usize,
         num_coefficients: usize,
         pre_emphasis_coefficient: f32,
-    ) -> FeatureDetector<T> {
+        comparator_band_size: usize,
+        comparator_ref: f32,
+    ) -> FeatureDetector {
         let detector = FeatureDetector {
-            on_event,
             threshold,
             sample_rate,
             bit_length,
@@ -139,7 +151,6 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
             min_frames: 9999,
             max_frames: 0,
             result_state: None,
-            comparator: FeatureComparator::new(None, None),
             extractor: FeatureExtractor::new(
                 sample_rate,
                 samples_per_frame,
@@ -147,7 +158,8 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
                 num_coefficients,
                 pre_emphasis_coefficient,
             ),
-            extractor_listener: FeatureExtractorAggregator::new(),
+            comparator_band_size,
+            comparator_ref,
         };
         detector
     }
@@ -219,11 +231,7 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
         if self.keywords.get_mut(&keyword).is_none() {
             self.keywords.insert(
                 keyword.clone(),
-                Wakeword::new(
-                    enable_average,
-                    enabled,
-                    threshold,
-                ),
+                Wakeword::new(enable_average, enabled, threshold),
             );
         }
         let mut min_frames: usize = 0;
@@ -233,7 +241,11 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
                 Ok(features) => {
                     let word = self.keywords.get_mut(&keyword).unwrap();
                     word.add_features(features.to_vec());
-                    min_frames = if min_frames == 0 { word.get_min_frames() } else { std::cmp::min(min_frames, features.len()) };
+                    min_frames = if min_frames == 0 {
+                        word.get_min_frames()
+                    } else {
+                        std::cmp::min(min_frames, features.len())
+                    };
                     max_frames = std::cmp::min(max_frames, features.len());
                 }
                 Err(msg) => {
@@ -272,25 +284,21 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
             Ok(model)
         }
     }
-    pub fn process_bytes(&mut self, buffer: Vec<u8>) {
-        self.extractor
-            .process_buffer(&buffer, &mut self.extractor_listener);
-        let features = self.extractor_listener.get_features();
-        if features.len() > 0 {
-            for feature in features {
-                self.process_features(feature.to_vec());
-            }
-        }
+    pub fn process_bytes(&mut self, buffer: Vec<u8>) -> Vec<DetectedWakeword> {
+        let features = self.extractor.process_buffer(&buffer);
+        self.process_features(features)
     }
-    pub fn process_pcm_signed(&mut self, buffer: Vec<i16>) {
-        self.extractor
-            .process_audio(&buffer, &mut self.extractor_listener);
-        let features = self.extractor_listener.get_features();
-        if features.len() > 0 {
-            for feature in features {
-                self.process_features(feature.to_vec());
-            }
-        }
+    pub fn process_pcm_signed(&mut self, buffer: Vec<i16>) -> Vec<DetectedWakeword> {
+        let features = self.extractor.process_audio(&buffer);
+        self.process_features(features)
+    }
+    fn process_features(&mut self, features: Vec<Vec<f32>>) -> Vec<DetectedWakeword> {
+        features
+            .into_iter()
+            .map(|feature| self.process_new_feature_vec(feature))
+            .filter(Option::is_some)
+            .map(Option::unwrap)
+            .collect::<Vec<DetectedWakeword>>()
     }
     fn extract_features_from_file(&mut self, file_path: String) -> Result<Vec<Vec<f32>>, &str> {
         let path = Path::new(&file_path);
@@ -302,7 +310,14 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
             Ok(input) => {
                 let mut input_copy = input.to_vec();
                 input_copy.drain(0..44);
-                Ok(self.extract_features_from_buffer(input_copy))
+                let mut extractor = FeatureExtractor::new(
+                    self.sample_rate,
+                    self.samples_per_frame,
+                    self.samples_per_shift,
+                    self.num_coefficients,
+                    self.pre_emphasis_coefficient,
+                );
+                Ok(self.normalize_features(extractor.process_buffer(&input_copy)))
             }
             Err(..) => {
                 warn!("Can not read file file \"{}\"", file_path);
@@ -310,57 +325,46 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
             }
         }
     }
-    fn extract_features_from_buffer(&self, buffer: Vec<u8>) -> Vec<Vec<f32>> {
-        let mut aggregator = FeatureExtractorAggregator::new();
-        let mut extractor = FeatureExtractor::new(
-            self.sample_rate,
-            self.samples_per_frame,
-            self.samples_per_shift,
-            self.num_coefficients,
-            self.pre_emphasis_coefficient,
-        );
-        extractor.process_buffer(&buffer, &mut aggregator);
-        let normalized = self.normalize_features(aggregator.get_features());
-        normalized
-    }
-    fn process_features(&mut self, features: Vec<f32>) {
+    fn process_new_feature_vec(&mut self, features: Vec<f32>) -> Option<DetectedWakeword> {
+        let mut result: Option<DetectedWakeword> = None;
         self.frames.push(features);
         if self.frames.len() >= self.min_frames {
             if self.buffering {
                 self.buffering = false;
                 println!("Ready");
             }
-            self.run_detection();
+            result = self.run_detection();
         }
         if self.frames.len() >= self.max_frames {
             self.frames.drain(0..1);
         }
+        result
     }
-    fn run_detection(&mut self) {
+    fn run_detection(&mut self) -> Option<DetectedWakeword> {
         let features = self.normalize_features(self.frames.to_vec());
         let result_option = self.get_best_keyword(features);
         match result_option {
             Some(result) => {
-                let previous_result = self.result_state.as_ref();
                 if self.result_state.is_some() {
-                    let detected_wakeword = previous_result.unwrap();
-                    if result.wakeword == detected_wakeword.wakeword
-                        && result.score < detected_wakeword.score
-                    {
+                    let prev_wakeword = self.result_state.as_ref().unwrap().wakeword.clone();
+                    let prev_score = self.result_state.as_ref().unwrap().score;
+                    if result.wakeword == prev_wakeword && result.score < prev_score {
                         debug!(
                             "keyword '{}' detected, score {}",
-                            result.wakeword,
-                            previous_result.unwrap().score
+                            result.wakeword, prev_score
                         );
-                        (self.on_event)(detected_wakeword.clone());
                         self.reset();
-                        return;
+                        return Some(DetectedWakeword {
+                            wakeword: result.wakeword,
+                            score: prev_score,
+                        });
                     }
                 }
                 self.result_state = Some(result);
+                None
             }
-            None => {}
-        };
+            None => None,
+        }
     }
     fn reset(&mut self) {
         self.frames.clear();
@@ -394,66 +398,74 @@ impl<T: FnMut(DetectedWakeword)> FeatureDetector<T> {
         }
         normalized_frames
     }
-
-    fn get_best_keyword(&mut self, features: Vec<Vec<f32>>) -> Option<DetectedWakeword> {
-        let mut result: Option<DetectedWakeword> = None;
+    fn get_best_keyword(&self, features: Vec<Vec<f32>>) -> Option<DetectedWakeword> {
+        let mut results: Vec<thread::JoinHandle<Option<DetectedWakeword>>> = vec![];
         for (name, keyword) in &self.keywords {
             if !keyword.is_enabled() {
                 continue;
             }
+            let wakeword_name = name.clone();
             let threshold = keyword.get_threshold().unwrap_or(self.threshold);
-            for template in keyword.get_templates() {
-                let mut frames = features.to_vec();
-                if frames.len() > template.len() {
-                    frames.drain(template.len()..frames.len());
+            let templates = keyword.get_templates();
+            let features_copy = features.to_vec();
+            let comparator_band_size = self.comparator_band_size;
+            let comparator_ref = self.comparator_ref;
+            let comparator_task = thread::spawn(move || {
+                let comparator = FeatureComparator::new(comparator_band_size, comparator_ref);
+                let mut detected: Option<DetectedWakeword> = None;
+                for template in templates {
+                    let mut frames = features_copy.to_vec();
+                    if frames.len() > template.len() {
+                        frames.drain(template.len()..frames.len());
+                    }
+                    let score = comparator.compare(
+                        &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+                        &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+                    );
+                    if score < threshold {
+                        break;
+                    }
+                    let prev_result = detected.as_ref();
+                    if prev_result.is_some() && score < prev_result.unwrap().score {
+                        break;
+                    }
+                    detected = Some(DetectedWakeword {
+                        wakeword: wakeword_name.clone(),
+                        score,
+                    });
                 }
-                let score = self.comparator.compare(
-                    &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-                    &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-                );
-                if score < threshold {
-                    break;
-                }
-                let prev_result = result.as_ref();
-                if prev_result.is_some() && score < prev_result.unwrap().score {
-                    break;
-                }
-                result = Some(DetectedWakeword {
-                    wakeword: name.clone(),
-                    score,
-                });
+                detected
+            });
+            results.push(comparator_task);
+        }
+        let mut detections: Vec<DetectedWakeword> = vec![];
+        for result_task in results {
+            let result = result_task.join().unwrap();
+            if result.is_some() {
+                detections.push(result.unwrap());
             }
         }
-        return result;
+        if detections.is_empty() {
+            None
+        } else {
+            detections.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+            Some(detections.remove(0))
+        }
     }
     pub fn get_samples_per_frame(&self) -> usize {
         self.samples_per_frame
     }
 }
+
 pub struct DetectedWakeword {
     pub wakeword: String,
     pub score: f32,
 }
 impl Clone for DetectedWakeword {
     fn clone(&self) -> Self {
-        Self { wakeword: self.wakeword.clone(), score: self.score.clone() }
-    }
-}
-struct FeatureExtractorAggregator {
-    features: Vec<Vec<f32>>,
-}
-impl FeatureExtractorAggregator {
-    fn new() -> Self {
-        FeatureExtractorAggregator {
-            features: Vec::new(),
+        Self {
+            wakeword: self.wakeword.clone(),
+            score: self.score.clone(),
         }
-    }
-    fn get_features(&mut self) -> Vec<Vec<f32>> {
-        self.features.drain(0..self.features.len()).collect()
-    }
-}
-impl FeatureExtractorListener for FeatureExtractorAggregator {
-    fn on_features_segment(&mut self, features: Vec<f32>) {
-        self.features.push(features);
     }
 }

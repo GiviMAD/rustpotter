@@ -15,18 +15,10 @@ impl FeatureComparator {
     fn compute_probability(&self, cost: f32) -> f32 {
         return 1. / (1. + ((cost - self.reference) / self.reference).exp());
     }
-    pub fn new(band_size: Option<usize>, reference: Option<f32>) -> Self {
+    pub fn new(band_size: usize, reference: f32) -> Self {
         FeatureComparator {
-            band_size: if band_size != None {
-                band_size.unwrap()
-            } else {
-                5
-            },
-            reference: if reference != None {
-                reference.unwrap()
-            } else {
-                0.22
-            },
+            band_size,
+            reference,
         }
     }
 }

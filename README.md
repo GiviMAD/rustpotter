@@ -17,7 +17,7 @@ The features can be loaded from a previous generated model file or extracted fro
 ### Create keyword model
 ```rust
 let mut detector_builder = detector::FeatureDetectorBuilder::new();
-    let mut word_detector = detector_builder.build(|_| panic!("Never"));
+    let mut word_detector = detector_builder.build();
     let name = String::from("hey home");
     let path = String::from("./hey_home.rpw");
     word_detector.add_keyword(
@@ -42,7 +42,7 @@ let mut detector_builder = detector::FeatureDetectorBuilder::new();
 ```rust
     let mut detector_builder = detector::FeatureDetectorBuilder::new();
     detector_builder.set_threshold(0.4);
-    let mut word_detector = detector_builder.build(|kw| println!("Detected {} - {}!", kw.wakeword, kw.score));
+    let mut word_detector = detector_builder.build();
     let result = word_detector.add_keyword_from_model(command.model_path, command.average_templates, true, None);
     if result.is_err() {
         panic!("Unable to load keyword model");
@@ -50,7 +50,10 @@ let mut detector_builder = detector::FeatureDetectorBuilder::new();
     while true {
         let mut frame_buffer = vec![0; word_detector.get_samples_per_frame()];
         let pcm_signed_buffer: Vec<i16> = ...;
-        word_detector.process_pcm_signed(frame_buffer);
+         let detections = word_detector.process_pcm_signed(frame_buffer);
+        for detection in detections {
+            println!("Detected '{}' with score {}!", detection.wakeword, detection.score)
+        }
     }
 
 ```
