@@ -1,19 +1,17 @@
 use crate::comparator::FeatureComparator;
-use crate::extractor::FeatureExtractor;
 use crate::wakeword::{Wakeword, WakewordModel};
+use nnnoiseless;
 use log::{debug, info, warn};
+use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, save_file, save_to_mem};
 use std::path::Path;
 use std::thread;
 use std::{collections::HashMap, fs};
+
+static INTERNAL_SAMPLE_RATE: usize = 48000;
 pub struct FeatureDetectorBuilder {
     threshold: Option<f32>,
     sample_rate: Option<usize>,
-    bit_length: Option<usize>,
-    frame_length_ms: Option<usize>,
-    frame_shift_ms: Option<usize>,
-    num_coefficients: Option<usize>,
-    pre_emphasis_coefficient: Option<f32>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
 }
@@ -22,11 +20,6 @@ impl FeatureDetectorBuilder {
         FeatureDetectorBuilder {
             threshold: None,
             sample_rate: None,
-            bit_length: None,
-            frame_length_ms: None,
-            frame_shift_ms: None,
-            num_coefficients: None,
-            pre_emphasis_coefficient: None,
             comparator_band_size: None,
             comparator_ref: None,
         }
@@ -35,11 +28,6 @@ impl FeatureDetectorBuilder {
         FeatureDetector::new(
             self.get_threshold(),
             self.get_sample_rate(),
-            self.get_bit_length(),
-            self.get_samples_per_frame(),
-            self.get_samples_per_shift(),
-            self.get_num_coefficients(),
-            self.get_pre_emphasis_coefficient(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
         )
@@ -48,55 +36,19 @@ impl FeatureDetectorBuilder {
         self.threshold.unwrap_or(0.5)
     }
     pub fn get_sample_rate(&self) -> usize {
-        self.sample_rate.unwrap_or(16000)
-    }
-    pub fn get_bit_length(&self) -> usize {
-        self.bit_length.unwrap_or(16)
-    }
-    pub fn get_frame_length_ms(&self) -> usize {
-        self.frame_length_ms.unwrap_or(30)
-    }
-    pub fn get_frame_shift_ms(&self) -> usize {
-        self.frame_shift_ms.unwrap_or(10)
-    }
-    pub fn get_num_coefficients(&self) -> usize {
-        self.num_coefficients.unwrap_or(13)
-    }
-    pub fn get_pre_emphasis_coefficient(&self) -> f32 {
-        self.pre_emphasis_coefficient.unwrap_or(0.97)
+        self.sample_rate.unwrap_or(INTERNAL_SAMPLE_RATE)
     }
     pub fn get_comparator_band_size(&self) -> usize {
-        self.comparator_band_size.unwrap_or(5)
+        self.comparator_band_size.unwrap_or(10)
     }
     pub fn get_comparator_ref(&self) -> f32 {
         self.comparator_ref.unwrap_or(0.22)
-    }
-    pub fn get_samples_per_frame(&self) -> usize {
-        self.get_sample_rate() * self.get_frame_length_ms() / 1000
-    }
-    pub fn get_samples_per_shift(&self) -> usize {
-        self.get_sample_rate() * self.get_frame_shift_ms() / 1000
     }
     pub fn set_threshold(&mut self, value: f32) {
         self.threshold = Some(value);
     }
     pub fn set_sample_rate(&mut self, value: usize) {
         self.sample_rate = Some(value);
-    }
-    pub fn set_bit_length(&mut self, value: usize) {
-        self.bit_length = Some(value);
-    }
-    pub fn set_frame_length_ms(&mut self, value: usize) {
-        self.frame_length_ms = Some(value);
-    }
-    pub fn set_frame_shift_ms(&mut self, value: usize) {
-        self.frame_shift_ms = Some(value);
-    }
-    pub fn set_num_coefficients(&mut self, value: usize) {
-        self.num_coefficients = Some(value);
-    }
-    pub fn set_pre_emphasis_coefficient(&mut self, value: f32) {
-        self.pre_emphasis_coefficient = Some(value);
     }
     pub fn set_comparator_band_size(&mut self, value: usize) {
         self.comparator_band_size = Some(value);
@@ -108,58 +60,57 @@ impl FeatureDetectorBuilder {
 pub struct FeatureDetector {
     // options
     threshold: f32,
-    sample_rate: usize,
-    bit_length: usize,
-    samples_per_frame: usize,
-    samples_per_shift: usize,
-    num_coefficients: usize,
-    pre_emphasis_coefficient: f32,
     comparator_band_size: usize,
     comparator_ref: f32,
+    sample_rate: usize,
     // state
+    samples_per_frame: usize,
     buffering: bool,
     min_frames: usize,
     max_frames: usize,
     frames: Vec<Vec<f32>>,
     keywords: HashMap<String, Wakeword>,
     result_state: Option<DetectedWakeword>,
-    extractor: FeatureExtractor,
+    extractor: nnnoiseless::features::DenoiseFeatures,
+    resampler: Option<FftFixedInOut<f32>>,
+    resampler_out_buffer: Option<Vec<Vec<f32>>>,
 }
 impl FeatureDetector {
     pub fn new(
         threshold: f32,
         sample_rate: usize,
-        bit_length: usize,
-        samples_per_frame: usize,
-        samples_per_shift: usize,
-        num_coefficients: usize,
-        pre_emphasis_coefficient: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
-    ) -> FeatureDetector {
+    ) -> Self {
+        let mut samples_per_frame = 480;
+        let resampler = if sample_rate != INTERNAL_SAMPLE_RATE {
+            let resampler =
+                FftFixedInOut::<f32>::new(sample_rate, INTERNAL_SAMPLE_RATE, samples_per_frame, 1)
+                    .unwrap();
+            samples_per_frame = resampler.input_frames_next();
+            Some(resampler)
+        } else {
+            None
+        };
         let detector = FeatureDetector {
             threshold,
             sample_rate,
-            bit_length,
             samples_per_frame,
-            samples_per_shift,
-            num_coefficients,
-            pre_emphasis_coefficient,
             frames: Vec::new(),
             keywords: HashMap::new(),
             buffering: true,
             min_frames: 9999,
             max_frames: 0,
             result_state: None,
-            extractor: FeatureExtractor::new(
-                sample_rate,
-                samples_per_frame,
-                samples_per_shift,
-                num_coefficients,
-                pre_emphasis_coefficient,
-            ),
+            extractor: nnnoiseless::features::DenoiseFeatures::new(),
             comparator_band_size,
             comparator_ref,
+            resampler_out_buffer: if resampler.is_some() {
+                Some(resampler.as_ref().unwrap().output_buffer_allocate())
+            } else {
+                None
+            },
+            resampler,
         };
         detector
     }
@@ -170,42 +121,6 @@ impl FeatureDetector {
         enabled: bool,
     ) -> Result<(), String> {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
-        if model.sample_rate != self.sample_rate {
-            return Err(format!(
-                "Invalid model: sample_rate is {}",
-                model.sample_rate
-            ));
-        }
-        if model.bit_length != self.bit_length {
-            return Err(format!("Invalid model: bit_length is {}", model.bit_length));
-        }
-        if model.channels != 1 {
-            return Err(format!("Invalid model: channels is {}", model.channels));
-        }
-        if model.samples_per_frame != self.samples_per_frame {
-            return Err(format!(
-                "Invalid model: samples_per_frame is {}",
-                model.samples_per_frame
-            ));
-        }
-        if model.samples_per_shift != self.samples_per_shift {
-            return Err(format!(
-                "Invalid model: samples_per_shift is {}",
-                model.samples_per_shift
-            ));
-        }
-        if model.num_coefficients != self.num_coefficients {
-            return Err(format!(
-                "Invalid model: num_coefficients is {}",
-                model.num_coefficients
-            ));
-        }
-        if model.pre_emphasis_coefficient != self.pre_emphasis_coefficient {
-            return Err(format!(
-                "Invalid model: pre_emphasis_coefficient is {}",
-                model.pre_emphasis_coefficient
-            ));
-        }
         let keyword = model.keyword.clone();
         let wakeword = Wakeword::from_model(model, enable_average, enabled);
         self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
@@ -272,33 +187,34 @@ impl FeatureDetector {
             let model = WakewordModel::new(
                 name.clone(),
                 features,
-                self.sample_rate,
-                self.bit_length,
-                1,
-                self.samples_per_frame,
-                self.samples_per_shift,
-                self.num_coefficients,
-                self.pre_emphasis_coefficient,
                 keyword.unwrap().get_threshold(),
             );
             Ok(model)
         }
     }
-    pub fn process_bytes(&mut self, buffer: Vec<u8>) -> Vec<DetectedWakeword> {
-        let features = self.extractor.process_buffer(&buffer);
-        self.process_features(features)
-    }
-    pub fn process_pcm_signed(&mut self, buffer: Vec<i16>) -> Vec<DetectedWakeword> {
-        let features = self.extractor.process_audio(&buffer);
-        self.process_features(features)
-    }
-    fn process_features(&mut self, features: Vec<Vec<f32>>) -> Vec<DetectedWakeword> {
-        features
-            .into_iter()
-            .map(|feature| self.process_new_feature_vec(feature))
-            .filter(Option::is_some)
-            .map(Option::unwrap)
-            .collect::<Vec<DetectedWakeword>>()
+    pub fn process_pcm_signed(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
+        if audio_chunk.len() != self.samples_per_frame {
+            panic!("Invalid input length {} ", audio_chunk.len());
+        }
+        let resampled_audio = if self.resampler.is_some() {
+            let resampler = self.resampler.as_mut().unwrap();
+            let mut float_buffer: Vec<f32> = Vec::with_capacity(audio_chunk.len());
+            for value in audio_chunk {
+                float_buffer.push(*value as f32);
+            }
+            let waves_in = vec![float_buffer; 1];
+            let waves_out = self.resampler_out_buffer.as_mut().unwrap();
+            resampler.process_into_buffer(&waves_in, waves_out,None).unwrap();
+            let result = waves_out.get(0).unwrap();
+            result.to_vec()
+        } else {
+            audio_chunk.into_iter().map(|n| *n as f32).collect::<Vec<_>>()
+        };
+        self.extractor.shift_and_filter_input(&resampled_audio);
+        self.extractor.compute_frame_features();
+        // TODO: use silence to avoid further computation
+        let features = self.extractor.features().to_vec();
+        self.process_new_feature_vec(features)
     }
     fn extract_features_from_file(&mut self, file_path: String) -> Result<Vec<Vec<f32>>, &str> {
         let path = Path::new(&file_path);
@@ -308,16 +224,40 @@ impl FeatureDetector {
         }
         match fs::read(path) {
             Ok(input) => {
-                let mut input_copy = input.to_vec();
-                input_copy.drain(0..44);
-                let mut extractor = FeatureExtractor::new(
-                    self.sample_rate,
-                    self.samples_per_frame,
-                    self.samples_per_shift,
-                    self.num_coefficients,
-                    self.pre_emphasis_coefficient,
-                );
-                Ok(self.normalize_features(extractor.process_buffer(&input_copy)))
+                let mut audio_bytes = input.to_vec();
+                audio_bytes.drain(0..44);
+                let mut feature_generator  = nnnoiseless::features::DenoiseFeatures::new();
+                let audio_pcm_signed = audio_bytes
+                .chunks_exact(2)
+                .into_iter()
+                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as f32)
+                .collect::<Vec<_>>();
+                let audio_pcm_signed_resampled = if self.sample_rate == INTERNAL_SAMPLE_RATE {
+                    audio_pcm_signed
+                } else {
+                    let mut resampler = FftFixedInOut::<f32>::new(self.sample_rate, INTERNAL_SAMPLE_RATE, 480, 1)
+                    .unwrap();
+                    let mut out = resampler.output_buffer_allocate();
+                   let resampled_audio = audio_pcm_signed.chunks_exact(resampler.input_frames_next()).map(|sample|{
+                        resampler.process_into_buffer(&[sample],&mut out[..] ,None).unwrap();
+                        out.get(0).unwrap().to_vec()
+                    }).flatten().collect::<Vec<f32>>();
+                    resampled_audio
+                };
+                let mut is_silence = true;
+                let all_features = audio_pcm_signed_resampled.chunks_exact(nnnoiseless::FRAME_SIZE).into_iter()
+                .filter_map(|audio_chuck|{
+                    feature_generator.shift_input(audio_chuck);
+                    let silence = feature_generator.compute_frame_features();
+                    if silence && is_silence {
+                        None
+                    } else {
+                        is_silence = false;
+                        let features = feature_generator.features();
+                        Some(features.to_vec())
+                    }
+                }).collect::<Vec<_>>();
+                Ok(self.normalize_features(all_features))
             }
             Err(..) => {
                 warn!("Can not read file file \"{}\"", file_path);
@@ -412,7 +352,7 @@ impl FeatureDetector {
             let comparator_ref = self.comparator_ref;
             let comparator_task = thread::spawn(move || {
                 let comparator = FeatureComparator::new(comparator_band_size, comparator_ref);
-                let mut detected: Option<DetectedWakeword> = None;
+                let mut detection: Option<DetectedWakeword> = None;
                 for template in templates {
                     let mut frames = features_copy.to_vec();
                     if frames.len() > template.len() {
@@ -423,18 +363,18 @@ impl FeatureDetector {
                         &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
                     );
                     if score < threshold {
-                        break;
+                        continue;
                     }
-                    let prev_result = detected.as_ref();
-                    if prev_result.is_some() && score < prev_result.unwrap().score {
-                        break;
+                    let prev_detection = detection.as_ref();
+                    if prev_detection.is_some() && score < prev_detection.unwrap().score {
+                        continue;
                     }
-                    detected = Some(DetectedWakeword {
+                    detection = Some(DetectedWakeword {
                         wakeword: wakeword_name.clone(),
                         score,
                     });
                 }
-                detected
+                detection
             });
             results.push(comparator_task);
         }
