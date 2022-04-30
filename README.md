@@ -8,7 +8,7 @@
 
 ## Description
 
-This project allows detect concrete words on and audio stream, to do so it generates a set of features from some audio samples to later compare them with the features generated from a live audio stream, to calculate the probability of a match.
+This project allows to detect a specific utterance on a live audio stream, to do so it generates a set of features from some audio samples to later compare them with the features generated from the stream, to calculate the probability of a match.
 
 The features can be loaded from a previous generated model file or extracted from the samples before start the live streaming.
 
