@@ -11,13 +11,6 @@ pub struct Wakeword {
 #[derive(Savefile)]
 pub struct WakewordModel {
     pub keyword: String,
-    pub sample_rate: usize,
-    pub bit_length: usize,
-    pub channels: usize,
-    pub samples_per_frame: usize,
-    pub samples_per_shift: usize,
-    pub num_coefficients: usize,
-    pub pre_emphasis_coefficient: f32,
     threshold: Option<f32>,
     templates: Vec<Vec<Vec<f32>>>,
 }
@@ -25,25 +18,11 @@ impl WakewordModel {
     pub fn new(
         keyword: String,
         templates: Vec<Vec<Vec<f32>>>,
-        sample_rate: usize,
-        bit_length: usize,
-        channels: usize,
-        samples_per_frame: usize,
-        samples_per_shift: usize,
-        num_coefficients: usize,
-        pre_emphasis_coefficient: f32,
         threshold: Option<f32>,
     ) -> Self {
         WakewordModel {
             keyword,
             templates,
-            sample_rate,
-            bit_length,
-            channels,
-            samples_per_frame,
-            samples_per_shift,
-            num_coefficients,
-            pre_emphasis_coefficient,
             threshold,
         }
     }
