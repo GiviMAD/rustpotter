@@ -1,6 +1,6 @@
 use crate::comparator::FeatureComparator;
+use crate::nnnoiseless_fork::DenoiseFeatures;
 use crate::wakeword::{Wakeword, WakewordModel};
-use nnnoiseless;
 use log::{debug, info, warn};
 use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, save_file, save_to_mem};
@@ -71,7 +71,7 @@ pub struct FeatureDetector {
     frames: Vec<Vec<f32>>,
     keywords: HashMap<String, Wakeword>,
     result_state: Option<DetectedWakeword>,
-    extractor: nnnoiseless::features::DenoiseFeatures,
+    extractor: DenoiseFeatures,
     resampler: Option<FftFixedInOut<f32>>,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
 }
@@ -102,7 +102,7 @@ impl FeatureDetector {
             min_frames: 9999,
             max_frames: 0,
             result_state: None,
-            extractor: nnnoiseless::features::DenoiseFeatures::new(),
+            extractor: DenoiseFeatures::new(),
             comparator_band_size,
             comparator_ref,
             resampler_out_buffer: if resampler.is_some() {
@@ -226,7 +226,7 @@ impl FeatureDetector {
             Ok(input) => {
                 let mut audio_bytes = input.to_vec();
                 audio_bytes.drain(0..44);
-                let mut feature_generator  = nnnoiseless::features::DenoiseFeatures::new();
+                let mut feature_generator  = DenoiseFeatures::new();
                 let audio_pcm_signed = audio_bytes
                 .chunks_exact(2)
                 .into_iter()

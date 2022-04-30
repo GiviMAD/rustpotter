@@ -9,3 +9,4 @@ pub mod detector;
 pub mod dtw;
 mod comparator;
 mod wakeword;
+mod nnnoiseless_fork;
