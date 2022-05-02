@@ -1,33 +1,45 @@
 use crate::comparator::FeatureComparator;
 use crate::nnnoiseless_fork::DenoiseFeatures;
 use crate::wakeword::{Wakeword, WakewordModel};
+use hound::{SampleFormat, WavReader};
 use log::{debug, info, warn};
 use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, save_file, save_to_mem};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::thread;
-use std::{collections::HashMap, fs};
-
 static INTERNAL_SAMPLE_RATE: usize = 48000;
+
+pub type FeatureDetectorSampleFormat = SampleFormat;
 pub struct FeatureDetectorBuilder {
     threshold: Option<f32>,
     sample_rate: Option<usize>,
+    sample_format: Option<SampleFormat>,
+    bits_per_sample: Option<u16>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
 }
 impl FeatureDetectorBuilder {
     pub fn new() -> Self {
         FeatureDetectorBuilder {
-            threshold: None,
+            // input options
             sample_rate: None,
+            sample_format: None,
+            bits_per_sample: None,
+            // detection options
+            threshold: None,
             comparator_band_size: None,
             comparator_ref: None,
         }
     }
     pub fn build(&self) -> FeatureDetector {
         FeatureDetector::new(
-            self.get_threshold(),
             self.get_sample_rate(),
+            self.get_sample_format(),
+            self.get_bits_per_sample(),
+            self.get_threshold(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
         )
@@ -38,6 +50,12 @@ impl FeatureDetectorBuilder {
     pub fn get_sample_rate(&self) -> usize {
         self.sample_rate.unwrap_or(INTERNAL_SAMPLE_RATE)
     }
+    pub fn get_sample_format(&self) -> SampleFormat {
+        self.sample_format.unwrap_or(SampleFormat::Int)
+    }
+    pub fn get_bits_per_sample(&self) -> u16 {
+        self.bits_per_sample.unwrap_or(16)
+    }
     pub fn get_comparator_band_size(&self) -> usize {
         self.comparator_band_size.unwrap_or(10)
     }
@@ -47,8 +65,14 @@ impl FeatureDetectorBuilder {
     pub fn set_threshold(&mut self, value: f32) {
         self.threshold = Some(value);
     }
+    pub fn set_bits_per_sample(&mut self, value: u16) {
+        self.bits_per_sample = Some(value);
+    }
     pub fn set_sample_rate(&mut self, value: usize) {
         self.sample_rate = Some(value);
+    }
+    pub fn set_sample_format(&mut self, value: SampleFormat) {
+        self.sample_format = Some(value);
     }
     pub fn set_comparator_band_size(&mut self, value: usize) {
         self.comparator_band_size = Some(value);
@@ -58,11 +82,14 @@ impl FeatureDetectorBuilder {
     }
 }
 pub struct FeatureDetector {
-    // options
+    // input options
+    sample_rate: usize,
+    sample_format: SampleFormat,
+    bits_per_sample: u16,
+    // detection options
     threshold: f32,
     comparator_band_size: usize,
     comparator_ref: f32,
-    sample_rate: usize,
     // state
     samples_per_frame: usize,
     buffering: bool,
@@ -77,8 +104,12 @@ pub struct FeatureDetector {
 }
 impl FeatureDetector {
     pub fn new(
-        threshold: f32,
+        // input options
         sample_rate: usize,
+        sample_format: SampleFormat,
+        bits_per_sample: u16,
+        // detection options
+        threshold: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
     ) -> Self {
@@ -95,6 +126,8 @@ impl FeatureDetector {
         let detector = FeatureDetector {
             threshold,
             sample_rate,
+            sample_format,
+            bits_per_sample,
             samples_per_frame,
             frames: Vec::new(),
             keywords: HashMap::new(),
@@ -184,86 +217,171 @@ impl FeatureDetector {
             Err(String::from("Missing wakeword"))
         } else {
             let features = keyword.unwrap().get_templates();
-            let model = WakewordModel::new(
-                name.clone(),
-                features,
-                keyword.unwrap().get_threshold(),
-            );
+            let model =
+                WakewordModel::new(name.clone(), features, keyword.unwrap().get_threshold());
             Ok(model)
         }
     }
-    pub fn process_pcm_signed(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
-        if audio_chunk.len() != self.samples_per_frame {
-            panic!("Invalid input length {} ", audio_chunk.len());
-        }
+    pub fn process(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
+        self.process_16bit_int(audio_chunk)
+    }
+    pub fn process_8bit_int(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
+        assert!(self.bits_per_sample == 8);
+        self.process_int(&audio_chunk.into_iter().map(|i| *i as i32).collect::<Vec::<_>>())
+    }
+    pub fn process_16bit_int(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
+        assert!(self.bits_per_sample == 16);
+        self.process_int(&audio_chunk.into_iter().map(|i| *i as i32).collect::<Vec::<_>>())
+    }
+    pub fn process_32bit_int(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
+        assert!(self.bits_per_sample == 32);
+        self.process_int(audio_chunk)
+    }
+    fn process_int(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
+        assert!(audio_chunk.len() == self.samples_per_frame);
+        assert!(self.sample_format == SampleFormat::Int);
         let resampled_audio = if self.resampler.is_some() {
             let resampler = self.resampler.as_mut().unwrap();
-            let mut float_buffer: Vec<f32> = Vec::with_capacity(audio_chunk.len());
-            for value in audio_chunk {
-                float_buffer.push(*value as f32);
-            }
+            let bits_per_sample = self.bits_per_sample;
+            let float_buffer: Vec<f32> = audio_chunk
+                .into_iter()
+                .map(move |s| {
+                    if bits_per_sample < 16 {
+                        (*s << (16 - bits_per_sample)) as f32
+                    } else {
+                        (*s >> (bits_per_sample - 16)) as f32
+                    }
+                })
+                .collect::<Vec<_>>();
             let waves_in = vec![float_buffer; 1];
             let waves_out = self.resampler_out_buffer.as_mut().unwrap();
-            resampler.process_into_buffer(&waves_in, waves_out,None).unwrap();
+            resampler
+                .process_into_buffer(&waves_in, waves_out, None)
+                .unwrap();
             let result = waves_out.get(0).unwrap();
             result.to_vec()
         } else {
-            audio_chunk.into_iter().map(|n| *n as f32).collect::<Vec<_>>()
+            audio_chunk
+                .into_iter()
+                .map(|n| *n as f32)
+                .collect::<Vec<_>>()
         };
+        self.process_encoded_audio(resampled_audio)
+    }
+    pub fn process_32bit_float(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
+        if audio_chunk.len() != self.samples_per_frame {
+            panic!("Invalid input length {} ", audio_chunk.len());
+        }
+        assert!(self.bits_per_sample == 32);
+        assert!(self.sample_format == SampleFormat::Float);
+        let float_buffer: Vec<f32> = audio_chunk
+        .into_iter()
+        .map(|s| s * 32767.0)
+        .collect::<Vec<_>>();
+        let resampled_audio = if self.resampler.is_some() {
+            let resampler = self.resampler.as_mut().unwrap();
+            let waves_in = vec![float_buffer; 1];
+            let waves_out = self.resampler_out_buffer.as_mut().unwrap();
+            resampler
+                .process_into_buffer(&waves_in, waves_out, None)
+                .unwrap();
+            let result = waves_out.get(0).unwrap();
+            result.to_vec()
+        } else {
+            float_buffer
+        };
+        self.process_encoded_audio(resampled_audio)
+    }
+    fn process_encoded_audio(&mut self, resampled_audio: Vec<f32>) -> Option<DetectedWakeword> {
         self.extractor.shift_and_filter_input(&resampled_audio);
         self.extractor.compute_frame_features();
         // TODO: use silence to avoid further computation
         let features = self.extractor.features().to_vec();
         self.process_new_feature_vec(features)
     }
-    fn extract_features_from_file(&mut self, file_path: String) -> Result<Vec<Vec<f32>>, &str> {
+    fn extract_features_from_file(&mut self, file_path: String) -> Result<Vec<Vec<f32>>, String> {
         let path = Path::new(&file_path);
         if !path.exists() || !path.is_file() {
             warn!("File \"{}\" not found!", file_path);
-            return Err("Can not read file");
+            return Err("Can not read file".to_string());
         }
-        match fs::read(path) {
-            Ok(input) => {
-                let mut audio_bytes = input.to_vec();
-                audio_bytes.drain(0..44);
-                let mut feature_generator  = DenoiseFeatures::new();
-                let audio_pcm_signed = audio_bytes
-                .chunks_exact(2)
-                .into_iter()
-                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as f32)
-                .collect::<Vec<_>>();
-                let audio_pcm_signed_resampled = if self.sample_rate == INTERNAL_SAMPLE_RATE {
-                    audio_pcm_signed
+
+        let in_file = BufReader::new(File::open(file_path).or_else(|err| Err(err.to_string()))?);
+        let wav_reader = WavReader::new(in_file).or_else(|err| Err(err.to_string()))?;
+        let sample_rate = wav_reader.spec().sample_rate;
+        let channels = wav_reader.spec().channels;
+        if channels != 1 {
+            return Err("Only samples with 1 channels are supported for now".to_string());
+        }
+        let audio_pcm_signed_resampled = match wav_reader.spec().sample_format {
+            SampleFormat::Int => {
+                let bits_per_sample = wav_reader.spec().bits_per_sample;
+                assert!(bits_per_sample <= 32);
+                let samples = wav_reader
+                    .into_samples::<i32>()
+                    .map(move |s| {
+                        s.map(|s| {
+                            if bits_per_sample < 16 {
+                                (s << (16 - bits_per_sample)) as f32
+                            } else {
+                                (s >> (bits_per_sample - 16)) as f32
+                            }
+                        })
+                        .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                if sample_rate as usize != INTERNAL_SAMPLE_RATE {
+                    self.resample_audio(&samples)
                 } else {
-                    let mut resampler = FftFixedInOut::<f32>::new(self.sample_rate, INTERNAL_SAMPLE_RATE, 480, 1)
+                    samples
+                }
+            }
+            SampleFormat::Float => {
+                let samples = wav_reader
+                    .into_samples::<f32>()
+                    .map(|s| s.map(|s| s * 32767.0).unwrap())
+                    .collect::<Vec<_>>();
+                if sample_rate as usize != INTERNAL_SAMPLE_RATE {
+                    self.resample_audio(&samples)
+                } else {
+                    samples
+                }
+            }
+        };
+        let mut is_silence = true;
+        let mut feature_generator = DenoiseFeatures::new();
+        let all_features = audio_pcm_signed_resampled
+            .chunks_exact(nnnoiseless::FRAME_SIZE)
+            .into_iter()
+            .filter_map(|audio_chuck| {
+                feature_generator.shift_input(audio_chuck);
+                let silence = feature_generator.compute_frame_features();
+                if silence && is_silence {
+                    None
+                } else {
+                    is_silence = false;
+                    let features = feature_generator.features();
+                    Some(features.to_vec())
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(self.normalize_features(all_features))
+    }
+    fn resample_audio(&self, audio_pcm_signed: &[f32]) -> Vec<f32> {
+        let mut resampler =
+            FftFixedInOut::<f32>::new(self.sample_rate, INTERNAL_SAMPLE_RATE, 480, 1).unwrap();
+        let mut out = resampler.output_buffer_allocate();
+        let resampled_audio = audio_pcm_signed
+            .chunks_exact(resampler.input_frames_next())
+            .map(|sample| {
+                resampler
+                    .process_into_buffer(&[sample], &mut out[..], None)
                     .unwrap();
-                    let mut out = resampler.output_buffer_allocate();
-                   let resampled_audio = audio_pcm_signed.chunks_exact(resampler.input_frames_next()).map(|sample|{
-                        resampler.process_into_buffer(&[sample],&mut out[..] ,None).unwrap();
-                        out.get(0).unwrap().to_vec()
-                    }).flatten().collect::<Vec<f32>>();
-                    resampled_audio
-                };
-                let mut is_silence = true;
-                let all_features = audio_pcm_signed_resampled.chunks_exact(nnnoiseless::FRAME_SIZE).into_iter()
-                .filter_map(|audio_chuck|{
-                    feature_generator.shift_input(audio_chuck);
-                    let silence = feature_generator.compute_frame_features();
-                    if silence && is_silence {
-                        None
-                    } else {
-                        is_silence = false;
-                        let features = feature_generator.features();
-                        Some(features.to_vec())
-                    }
-                }).collect::<Vec<_>>();
-                Ok(self.normalize_features(all_features))
-            }
-            Err(..) => {
-                warn!("Can not read file file \"{}\"", file_path);
-                Err("Can not read file file")
-            }
-        }
+                out.get(0).unwrap().to_vec()
+            })
+            .flatten()
+            .collect::<Vec<f32>>();
+        resampled_audio
     }
     fn process_new_feature_vec(&mut self, features: Vec<f32>) -> Option<DetectedWakeword> {
         let mut result: Option<DetectedWakeword> = None;
