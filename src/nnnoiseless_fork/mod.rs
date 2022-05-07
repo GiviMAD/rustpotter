@@ -6,13 +6,14 @@
 //! detection, or when the `train` feature is enabled then can be collected and used to train new
 //! neural nets.
 
-use nnnoiseless::{
-     FRAME_SIZE, FREQ_SIZE, NB_BANDS, NB_FEATURES,
-};
-/// private duplicate code
+/// copied from nnnoiseless
 use once_cell::sync::OnceCell;
 mod fft;
 mod pitch;
+pub const FRAME_SIZE: usize = 120 << FRAME_SIZE_SHIFT;
+const FREQ_SIZE: usize = FRAME_SIZE + 1;
+const NB_BANDS: usize = 22;
+const NB_FEATURES: usize = NB_BANDS + 3 * NB_DELTA_CEPS + 2;
 const WINDOW_SIZE: usize = 2 * FRAME_SIZE;
 const CEPS_MEM: usize = 8;
 const NB_DELTA_CEPS: usize = 6;

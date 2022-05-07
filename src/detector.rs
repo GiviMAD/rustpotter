@@ -1,66 +1,55 @@
 use crate::comparator::FeatureComparator;
-use crate::nnnoiseless_fork::DenoiseFeatures;
+use crate::nnnoiseless_fork::{self, DenoiseFeatures};
 use crate::wakeword::{Wakeword, WakewordModel};
-use hound::{SampleFormat, WavReader};
+use hound::WavReader;
 use log::{debug, info, warn};
 use rubato::{FftFixedInOut, Resampler};
-use savefile::{load_file, save_file, save_to_mem};
+use savefile::{load_file, load_from_mem, save_file, save_to_mem};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::thread;
+use std::time::SystemTime;
 static INTERNAL_SAMPLE_RATE: usize = 48000;
-
-pub type FeatureDetectorSampleFormat = SampleFormat;
-pub struct FeatureDetectorBuilder {
-    threshold: Option<f32>,
+pub type VadMode = webrtc_vad::VadMode;
+pub type SampleFormat = hound::SampleFormat;
+pub struct WakewordDetectorBuilder {
     sample_rate: Option<usize>,
     sample_format: Option<SampleFormat>,
     bits_per_sample: Option<u16>,
+    vad_mode: Option<VadMode>,
+    vad_detection_delay: Option<u16>,
+    threshold: Option<f32>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
 }
-impl FeatureDetectorBuilder {
+impl WakewordDetectorBuilder {
     pub fn new() -> Self {
-        FeatureDetectorBuilder {
+        WakewordDetectorBuilder {
             // input options
             sample_rate: None,
             sample_format: None,
             bits_per_sample: None,
             // detection options
+            vad_mode: None,
+            vad_detection_delay: None,
             threshold: None,
             comparator_band_size: None,
             comparator_ref: None,
         }
     }
-    pub fn build(&self) -> FeatureDetector {
-        FeatureDetector::new(
+    pub fn build(&self) -> WakewordDetector {
+        WakewordDetector::new(
             self.get_sample_rate(),
             self.get_sample_format(),
             self.get_bits_per_sample(),
+            self.get_vad_mode(),
+            self.get_vad_detection_delay(),
             self.get_threshold(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
         )
-    }
-    pub fn get_threshold(&self) -> f32 {
-        self.threshold.unwrap_or(0.5)
-    }
-    pub fn get_sample_rate(&self) -> usize {
-        self.sample_rate.unwrap_or(INTERNAL_SAMPLE_RATE)
-    }
-    pub fn get_sample_format(&self) -> SampleFormat {
-        self.sample_format.unwrap_or(SampleFormat::Int)
-    }
-    pub fn get_bits_per_sample(&self) -> u16 {
-        self.bits_per_sample.unwrap_or(16)
-    }
-    pub fn get_comparator_band_size(&self) -> usize {
-        self.comparator_band_size.unwrap_or(10)
-    }
-    pub fn get_comparator_ref(&self) -> f32 {
-        self.comparator_ref.unwrap_or(0.22)
     }
     pub fn set_threshold(&mut self, value: f32) {
         self.threshold = Some(value);
@@ -80,8 +69,46 @@ impl FeatureDetectorBuilder {
     pub fn set_comparator_ref(&mut self, value: f32) {
         self.comparator_ref = Some(value);
     }
+    pub fn set_vad_detection_delay(&mut self, value: u16) {
+        self.vad_detection_delay = Some(value);
+    }
+    pub fn set_vad_mode(&mut self, value: VadMode) {
+        self.vad_mode = Some(value);
+    }
+    fn get_threshold(&self) -> f32 {
+        self.threshold.unwrap_or(0.5)
+    }
+    fn get_sample_rate(&self) -> usize {
+        self.sample_rate.unwrap_or(INTERNAL_SAMPLE_RATE)
+    }
+    fn get_sample_format(&self) -> SampleFormat {
+        self.sample_format.unwrap_or(SampleFormat::Int)
+    }
+    fn get_bits_per_sample(&self) -> u16 {
+        self.bits_per_sample.unwrap_or(16)
+    }
+    fn get_comparator_band_size(&self) -> usize {
+        self.comparator_band_size.unwrap_or(6)
+    }
+    fn get_comparator_ref(&self) -> f32 {
+        self.comparator_ref.unwrap_or(0.22)
+    }
+    fn get_vad_detection_delay(&self) -> u16 {
+        self.vad_detection_delay.unwrap_or(3)
+    }
+    fn get_vad_mode(&self) -> Option<VadMode> {
+        if self.vad_mode.is_none() {
+            return None;
+        }
+        match self.vad_mode.as_ref().unwrap() {
+            VadMode::Quality => Some(VadMode::Quality),
+            VadMode::LowBitrate => Some(VadMode::LowBitrate),
+            VadMode::Aggressive => Some(VadMode::Aggressive),
+            VadMode::VeryAggressive => Some(VadMode::VeryAggressive),
+        }
+    }
 }
-pub struct FeatureDetector {
+pub struct WakewordDetector {
     // input options
     sample_rate: usize,
     sample_format: SampleFormat,
@@ -90,6 +117,9 @@ pub struct FeatureDetector {
     threshold: f32,
     comparator_band_size: usize,
     comparator_ref: f32,
+    resampler: Option<FftFixedInOut<f32>>,
+    vad_detector: Option<webrtc_vad::Vad>,
+    vad_detection_delay: u16,
     // state
     samples_per_frame: usize,
     buffering: bool,
@@ -99,16 +129,20 @@ pub struct FeatureDetector {
     keywords: HashMap<String, Wakeword>,
     result_state: Option<DetectedWakeword>,
     extractor: DenoiseFeatures,
-    resampler: Option<FftFixedInOut<f32>>,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
+    voice_detections: Vec<bool>,
+    voice_detection_time: SystemTime,
+    audio_cache: Vec<Vec<f32>>,
 }
-impl FeatureDetector {
+impl WakewordDetector {
     pub fn new(
         // input options
         sample_rate: usize,
         sample_format: SampleFormat,
         bits_per_sample: u16,
         // detection options
+        vad_mode: Option<VadMode>,
+        vad_detection_delay: u16,
         threshold: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
@@ -123,7 +157,15 @@ impl FeatureDetector {
         } else {
             None
         };
-        let detector = FeatureDetector {
+        let vad_detector = if vad_mode.is_some() {
+            Some(webrtc_vad::Vad::new_with_rate_and_mode(
+                webrtc_vad::SampleRate::Rate48kHz,
+                vad_mode.unwrap(),
+            ))
+        } else {
+            None
+        };
+        let detector = WakewordDetector {
             threshold,
             sample_rate,
             sample_format,
@@ -144,21 +186,51 @@ impl FeatureDetector {
                 None
             },
             resampler,
+            voice_detections: Vec::with_capacity(100),
+            audio_cache: Vec::with_capacity(100),
+            vad_detector,
+            vad_detection_delay,
+            voice_detection_time: SystemTime::UNIX_EPOCH,
         };
         detector
     }
-    pub fn add_keyword_from_model(
+    pub fn add_keyword_from_model_bytes(
+        &mut self,
+        bytes: Vec<u8>,
+        enable_average: bool,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let model: WakewordModel = load_from_mem(&bytes, 0).or(Err("Unable to load model data"))?;
+        self.add_keyword_from_model(model, enable_average, enabled)
+    }
+    pub fn add_keyword_from_model_file(
         &mut self,
         path: String,
         enable_average: bool,
         enabled: bool,
     ) -> Result<(), String> {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
+        self.add_keyword_from_model(model, enable_average, enabled)
+    }
+    fn add_keyword_from_model(
+        &mut self,
+        model: WakewordModel,
+        enable_average: bool,
+        enabled: bool,
+    ) -> Result<(), String> {
         let keyword = model.keyword.clone();
         let wakeword = Wakeword::from_model(model, enable_average, enabled);
         self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
         self.keywords.insert(keyword, wakeword);
         Ok(())
+    }
+    pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
+        let model = self.get_wakeword_model(&name)?;
+        save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
+    }
+    pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
+        let model = self.get_wakeword_model(&name)?;
+        save_to_mem(0, &model).or(Err(String::from("Unable to generate model bytes")))
     }
     fn update_detection_frame_size(&mut self, min_frames: usize, max_frames: usize) {
         self.min_frames = std::cmp::min(self.min_frames, min_frames);
@@ -203,14 +275,6 @@ impl FeatureDetector {
         }
         self.update_detection_frame_size(min_frames, max_frames);
     }
-    pub fn create_wakeword_model(&self, name: String, path: String) -> Result<(), String> {
-        let model = self.get_wakeword_model(&name)?;
-        save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
-    }
-    pub fn _create_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
-        let model = self.get_wakeword_model(&name)?;
-        save_to_mem(0, &model).or(Err(String::from("Unable to generate model bytes")))
-    }
     fn get_wakeword_model(&self, name: &String) -> Result<WakewordModel, String> {
         let keyword = self.keywords.get(name);
         if keyword.is_none() {
@@ -222,19 +286,34 @@ impl FeatureDetector {
             Ok(model)
         }
     }
-    pub fn process(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
-        self.process_16bit_int(audio_chunk)
+    pub fn process(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
+        self.process_i32(audio_chunk)
     }
-    pub fn process_8bit_int(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
+    pub fn process_i8(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
         assert!(self.bits_per_sample == 8);
-        self.process_int(&audio_chunk.into_iter().map(|i| *i as i32).collect::<Vec::<_>>())
+        self.process_int(
+            &audio_chunk
+                .into_iter()
+                .map(|i| *i as i32)
+                .collect::<Vec<_>>(),
+        )
     }
-    pub fn process_16bit_int(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
-        assert!(self.bits_per_sample == 16);
-        self.process_int(&audio_chunk.into_iter().map(|i| *i as i32).collect::<Vec::<_>>())
+    pub fn process_i16(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
+        assert!(self.bits_per_sample == 8 || self.bits_per_sample == 16);
+        self.process_int(
+            &audio_chunk
+                .into_iter()
+                .map(|i| *i as i32)
+                .collect::<Vec<_>>(),
+        )
     }
-    pub fn process_32bit_int(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
-        assert!(self.bits_per_sample == 32);
+    pub fn process_i32(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
+        assert!(
+            self.bits_per_sample == 8
+                || self.bits_per_sample == 16
+                || self.bits_per_sample == 24
+                || self.bits_per_sample == 32
+        );
         self.process_int(audio_chunk)
     }
     fn process_int(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
@@ -266,18 +345,16 @@ impl FeatureDetector {
                 .map(|n| *n as f32)
                 .collect::<Vec<_>>()
         };
-        self.process_encoded_audio(resampled_audio)
+        self.apply_vad_detection(resampled_audio)
     }
-    pub fn process_32bit_float(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
-        if audio_chunk.len() != self.samples_per_frame {
-            panic!("Invalid input length {} ", audio_chunk.len());
-        }
+    pub fn process_f32(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
+        assert!(audio_chunk.len() == self.samples_per_frame);
         assert!(self.bits_per_sample == 32);
         assert!(self.sample_format == SampleFormat::Float);
         let float_buffer: Vec<f32> = audio_chunk
-        .into_iter()
-        .map(|s| s * 32767.0)
-        .collect::<Vec<_>>();
+            .into_iter()
+            .map(|s| s * 32767.0)
+            .collect::<Vec<_>>();
         let resampled_audio = if self.resampler.is_some() {
             let resampler = self.resampler.as_mut().unwrap();
             let waves_in = vec![float_buffer; 1];
@@ -290,14 +367,71 @@ impl FeatureDetector {
         } else {
             float_buffer
         };
-        self.process_encoded_audio(resampled_audio)
+        self.apply_vad_detection(resampled_audio)
     }
-    fn process_encoded_audio(&mut self, resampled_audio: Vec<f32>) -> Option<DetectedWakeword> {
+    fn apply_vad_detection(&mut self, resampled_audio: Vec<f32>) -> Option<DetectedWakeword> {
+        if self.vad_detector.is_some()
+            && self.voice_detection_time.elapsed().unwrap().as_secs()
+                >= self.vad_detection_delay as u64
+        {
+            let vad = self.vad_detector.as_mut().unwrap();
+            let is_voice_result = vad.is_voice_segment(
+                &resampled_audio
+                    .iter()
+                    .map(|i| *i as i16)
+                    .collect::<Vec<i16>>(),
+            );
+            if self.voice_detections.len() == 100 {
+                self.voice_detections.drain(0..1);
+            }
+            self.voice_detections
+                .push(is_voice_result.is_err() || is_voice_result.unwrap());
+            let voice_activity = self.voice_detections.iter().filter(|i| **i == true).count();
+            if voice_activity < 50 {
+                if self.audio_cache.len() >= self.min_frames {
+                    self.audio_cache
+                        .drain(0..=self.audio_cache.len() - self.min_frames);
+                }
+                self.audio_cache.push(resampled_audio);
+                None
+            } else {
+                debug!("voice detected; processing cache");
+                self.audio_cache.to_vec().into_iter().for_each(|i| {
+                    self.process_encoded_audio(i, false);
+                });
+                self.voice_detections.clear();
+                self.audio_cache.clear();
+                self.voice_detection_time = SystemTime::now();
+                debug!("detection time updated, processing last frame");
+                self.process_encoded_audio(resampled_audio, true)
+            }
+        } else {
+            self.process_encoded_audio(resampled_audio, true)
+        }
+    }
+    fn process_encoded_audio(
+        &mut self,
+        resampled_audio: Vec<f32>,
+        run_detection: bool,
+    ) -> Option<DetectedWakeword> {
         self.extractor.shift_and_filter_input(&resampled_audio);
         self.extractor.compute_frame_features();
-        // TODO: use silence to avoid further computation
         let features = self.extractor.features().to_vec();
-        self.process_new_feature_vec(features)
+        let mut detection: Option<DetectedWakeword> = None;
+        self.frames.push(features);
+        if self.frames.len() >= self.min_frames {
+            if self.buffering {
+                self.buffering = false;
+                debug!("ready");
+            }
+            if run_detection {
+                detection = self.run_detection();
+            }
+        }
+        if self.frames.len() >= self.max_frames {
+            self.frames.drain(0..=self.frames.len() - self.max_frames);
+        }
+        detection
     }
     fn extract_features_from_file(&mut self, file_path: String) -> Result<Vec<Vec<f32>>, String> {
         let path = Path::new(&file_path);
@@ -309,13 +443,15 @@ impl FeatureDetector {
         let in_file = BufReader::new(File::open(file_path).or_else(|err| Err(err.to_string()))?);
         let wav_reader = WavReader::new(in_file).or_else(|err| Err(err.to_string()))?;
         let sample_rate = wav_reader.spec().sample_rate;
+        let sample_format = wav_reader.spec().sample_format;
+        let bits_per_sample = wav_reader.spec().bits_per_sample;
         let channels = wav_reader.spec().channels;
         if channels != 1 {
             return Err("Only samples with 1 channels are supported for now".to_string());
         }
-        let audio_pcm_signed_resampled = match wav_reader.spec().sample_format {
+        let audio_pcm_signed_resampled = match sample_format {
             SampleFormat::Int => {
-                let bits_per_sample = wav_reader.spec().bits_per_sample;
+                let bits_per_sample = bits_per_sample;
                 assert!(bits_per_sample <= 32);
                 let samples = wav_reader
                     .into_samples::<i32>()
@@ -351,7 +487,7 @@ impl FeatureDetector {
         let mut is_silence = true;
         let mut feature_generator = DenoiseFeatures::new();
         let all_features = audio_pcm_signed_resampled
-            .chunks_exact(nnnoiseless::FRAME_SIZE)
+            .chunks_exact(nnnoiseless_fork::FRAME_SIZE)
             .into_iter()
             .filter_map(|audio_chuck| {
                 feature_generator.shift_input(audio_chuck);
@@ -383,21 +519,6 @@ impl FeatureDetector {
             .collect::<Vec<f32>>();
         resampled_audio
     }
-    fn process_new_feature_vec(&mut self, features: Vec<f32>) -> Option<DetectedWakeword> {
-        let mut result: Option<DetectedWakeword> = None;
-        self.frames.push(features);
-        if self.frames.len() >= self.min_frames {
-            if self.buffering {
-                self.buffering = false;
-                println!("Ready");
-            }
-            result = self.run_detection();
-        }
-        if self.frames.len() >= self.max_frames {
-            self.frames.drain(0..1);
-        }
-        result
-    }
     fn run_detection(&mut self) -> Option<DetectedWakeword> {
         let features = self.normalize_features(self.frames.to_vec());
         let result_option = self.get_best_keyword(features);
@@ -425,6 +546,7 @@ impl FeatureDetector {
         }
     }
     fn reset(&mut self) {
+        self.voice_detection_time = SystemTime::now();
         self.frames.clear();
         self.buffering = true;
         self.result_state = None;
