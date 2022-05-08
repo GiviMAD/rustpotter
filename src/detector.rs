@@ -139,7 +139,6 @@ impl WakewordDetectorBuilder {
 }
 pub struct WakewordDetector {
     // input options
-    sample_rate: usize,
     sample_format: SampleFormat,
     bits_per_sample: u16,
     // detection options
@@ -202,7 +201,6 @@ impl WakewordDetector {
         };
         let detector = WakewordDetector {
             threshold,
-            sample_rate,
             sample_format,
             bits_per_sample,
             samples_per_frame,
