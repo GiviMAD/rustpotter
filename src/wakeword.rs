@@ -91,6 +91,10 @@ impl Wakeword {
             self.average_templates()
         }
     }
+    pub fn prioritize_template(&mut self, index: usize) {
+         self.templates.rotate_right(1);
+        self.templates.swap(index, 0);
+    }
     fn average_templates(&mut self) {
         if self.templates.len() <= 1  {
             return;

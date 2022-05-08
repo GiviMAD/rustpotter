@@ -21,6 +21,7 @@ pub struct WakewordDetectorBuilder {
     vad_mode: Option<VadMode>,
     vad_sensitivity: Option<f32>,
     vad_delay: Option<u16>,
+    eager_mode: bool,
     threshold: Option<f32>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
@@ -33,6 +34,7 @@ impl WakewordDetectorBuilder {
             sample_format: None,
             bits_per_sample: None,
             // detection options
+            eager_mode: false,
             vad_mode: None,
             vad_delay: None,
             vad_sensitivity: None,
@@ -46,6 +48,7 @@ impl WakewordDetectorBuilder {
             self.get_sample_rate(),
             self.get_sample_format(),
             self.get_bits_per_sample(),
+            self.get_eager_mode(),
             self.get_vad_mode(),
             self.get_vad_delay(),
             self.get_vad_sensitivity(),
@@ -72,6 +75,9 @@ impl WakewordDetectorBuilder {
     }
     pub fn set_comparator_ref(&mut self, value: f32) {
         self.comparator_ref = Some(value);
+    }
+    pub fn set_eager_mode(&mut self, value: bool) {
+        self.eager_mode = value;
     }
     pub fn set_vad_delay(&mut self, value: u16) {
         self.vad_delay = Some(value);
@@ -101,6 +107,9 @@ impl WakewordDetectorBuilder {
     fn get_comparator_ref(&self) -> f32 {
         self.comparator_ref.unwrap_or(0.22)
     }
+    fn get_eager_mode(&self) -> bool {
+        self.eager_mode
+    }
     fn get_vad_sensitivity(&self) -> f32 {
         self.vad_sensitivity.unwrap_or(0.5)
     }
@@ -128,6 +137,7 @@ pub struct WakewordDetector {
     threshold: f32,
     comparator_band_size: usize,
     comparator_ref: f32,
+    eager_mode: bool,
     resampler: Option<FftFixedInOut<f32>>,
     vad_detector: Option<webrtc_vad::Vad>,
     vad_delay: u16,
@@ -153,6 +163,7 @@ impl WakewordDetector {
         sample_format: SampleFormat,
         bits_per_sample: u16,
         // detection options
+        eager_mode: bool,
         vad_mode: Option<VadMode>,
         vad_delay: u16,
         vad_sensitivity: f32,
@@ -199,6 +210,7 @@ impl WakewordDetector {
                 None
             },
             resampler,
+            eager_mode,
             voice_detections: Vec::with_capacity(100),
             audio_cache: Vec::with_capacity(100),
             vad_detector,
@@ -544,6 +556,7 @@ impl WakewordDetector {
                 if self.result_state.is_some() {
                     let prev_wakeword = self.result_state.as_ref().unwrap().wakeword.clone();
                     let prev_score = self.result_state.as_ref().unwrap().score;
+                    let prev_index = self.result_state.as_ref().unwrap().index;
                     if result.wakeword == prev_wakeword && result.score < prev_score {
                         debug!(
                             "keyword '{}' detected, score {}",
@@ -553,11 +566,19 @@ impl WakewordDetector {
                         return Some(DetectedWakeword {
                             wakeword: result.wakeword,
                             score: prev_score,
+                            index: prev_index
                         });
                     }
                 }
-                self.result_state = Some(result);
-                None
+                if self.eager_mode {
+                    if result.index != 0 {
+                        self.keywords.get_mut(&result.wakeword).unwrap().prioritize_template(result.index);
+                    }
+                    Some(result)
+                }else{
+                    self.result_state = Some(result);
+                    None
+                }
             }
             None => None,
         }
@@ -607,10 +628,14 @@ impl WakewordDetector {
             let features_copy = features.to_vec();
             let comparator_band_size = self.comparator_band_size;
             let comparator_ref = self.comparator_ref;
+            let eager_mode = self.eager_mode;
             let comparator_task = thread::spawn(move || {
                 let comparator = FeatureComparator::new(comparator_band_size, comparator_ref);
                 let mut detection: Option<DetectedWakeword> = None;
-                for template in templates {
+                for (index, template) in templates.iter().enumerate() {
+                    if eager_mode && detection.is_some() {
+                        break;
+                    }
                     let mut frames = features_copy.to_vec();
                     if frames.len() > template.len() {
                         frames.drain(template.len()..frames.len());
@@ -629,6 +654,7 @@ impl WakewordDetector {
                     detection = Some(DetectedWakeword {
                         wakeword: wakeword_name.clone(),
                         score,
+                        index
                     });
                 }
                 detection
@@ -655,14 +681,19 @@ impl WakewordDetector {
 }
 
 pub struct DetectedWakeword {
+    // Detected wakeword name
     pub wakeword: String,
+    // Detection score
     pub score: f32,
+    // Detected wakeword template index
+    pub index: usize,
 }
 impl Clone for DetectedWakeword {
     fn clone(&self) -> Self {
         Self {
             wakeword: self.wakeword.clone(),
             score: self.score.clone(),
+            index: self.index.clone(),
         }
     }
 }
