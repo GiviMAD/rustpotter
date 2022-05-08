@@ -547,32 +547,38 @@ impl WakewordDetector {
         let result_option = self.get_best_keyword(features);
         match result_option {
             Some(result) => {
-                if self.result_state.is_some() {
-                    let prev_wakeword = self.result_state.as_ref().unwrap().wakeword.clone();
-                    let prev_score = self.result_state.as_ref().unwrap().score;
-                    let prev_index = self.result_state.as_ref().unwrap().index;
-                    if result.wakeword == prev_wakeword && result.score < prev_score {
-                        debug!(
-                            "keyword '{}' detected, score {}",
-                            result.wakeword, prev_score
-                        );
-                        self.reset();
-                        return Some(DetectedWakeword {
-                            wakeword: result.wakeword,
-                            score: prev_score,
-                            index: prev_index,
-                        });
-                    }
-                }
                 if self.eager_mode {
                     if result.index != 0 {
+                        debug!("Sorting '{}' templates", result.wakeword);
                         self.keywords
                             .get_mut(&result.wakeword)
                             .unwrap()
                             .prioritize_template(result.index);
                     }
+                    debug!(
+                        "keyword '{}' detected, score {}",
+                        result.wakeword, result.score
+                    );
+                    self.reset();
                     Some(result)
                 } else {
+                    if self.result_state.is_some() {
+                        let prev_wakeword = self.result_state.as_ref().unwrap().wakeword.clone();
+                        let prev_score = self.result_state.as_ref().unwrap().score;
+                        let prev_index = self.result_state.as_ref().unwrap().index;
+                        if result.wakeword == prev_wakeword && result.score < prev_score {
+                            debug!(
+                                "keyword '{}' detected, score {}",
+                                result.wakeword, prev_score
+                            );
+                            self.reset();
+                            return Some(DetectedWakeword {
+                                wakeword: result.wakeword,
+                                score: prev_score,
+                                index: prev_index,
+                            });
+                        }
+                    }
                     self.result_state = Some(result);
                     None
                 }
@@ -617,7 +623,7 @@ impl WakewordDetector {
         let mut detections: Vec<DetectedWakeword> =
             if self.single_thread || self.keywords.len() <= 1 {
                 self.keywords
-                .iter()
+                    .iter()
                     .filter_map(|(name, keyword)| {
                         let templates = keyword.get_templates();
                         let threshold = keyword.get_threshold().unwrap_or(self.threshold);
@@ -632,8 +638,8 @@ impl WakewordDetector {
                         )
                     })
                     .collect::<Vec<_>>()
-                } else {
-                    self.keywords
+            } else {
+                self.keywords
                     .iter()
                     .filter_map(|(name, keyword)| {
                         if !keyword.is_enabled() {
@@ -662,8 +668,8 @@ impl WakewordDetector {
                     .map(JoinHandle::join)
                     .filter_map(Result::unwrap)
                     .collect::<Vec<_>>()
-                };
-                if detections.is_empty() {
+            };
+        if detections.is_empty() {
             None
         } else {
             detections.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
