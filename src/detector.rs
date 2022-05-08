@@ -508,7 +508,7 @@ impl WakewordDetector {
                     })
                     .collect::<Vec<_>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
-                    self.resample_audio(&samples)
+                    resample_audio(sample_rate as usize, &samples)
                 } else {
                     samples
                 }
@@ -519,7 +519,7 @@ impl WakewordDetector {
                     .map(|s| s.map(|s| s * 32767.0).unwrap())
                     .collect::<Vec<_>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
-                    self.resample_audio(&samples)
+                    resample_audio(sample_rate as usize, &samples)
                 } else {
                     samples
                 }
@@ -543,22 +543,6 @@ impl WakewordDetector {
             })
             .collect::<Vec<_>>();
         Ok(self.normalize_features(all_features))
-    }
-    fn resample_audio(&self, audio_pcm_signed: &[f32]) -> Vec<f32> {
-        let mut resampler =
-            FftFixedInOut::<f32>::new(self.sample_rate, INTERNAL_SAMPLE_RATE, 480, 1).unwrap();
-        let mut out = resampler.output_buffer_allocate();
-        let resampled_audio = audio_pcm_signed
-            .chunks_exact(resampler.input_frames_next())
-            .map(|sample| {
-                resampler
-                    .process_into_buffer(&[sample], &mut out[..], None)
-                    .unwrap();
-                out.get(0).unwrap().to_vec()
-            })
-            .flatten()
-            .collect::<Vec<f32>>();
-        resampled_audio
     }
     fn run_detection(&mut self) -> Option<DetectedWakeword> {
         let features = self.normalize_features(self.frames.to_vec());
@@ -635,7 +619,7 @@ impl WakewordDetector {
         let mut detections: Vec<DetectedWakeword> =
             if self.single_thread || self.keywords.len() <= 1 {
                 self.keywords
-                    .iter()
+                .iter()
                     .filter_map(|(name, keyword)| {
                         let templates = keyword.get_templates();
                         let threshold = keyword.get_threshold().unwrap_or(self.threshold);
@@ -650,8 +634,8 @@ impl WakewordDetector {
                         )
                     })
                     .collect::<Vec<_>>()
-            } else {
-                self.keywords
+                } else {
+                    self.keywords
                     .iter()
                     .filter_map(|(name, keyword)| {
                         if !keyword.is_enabled() {
@@ -680,8 +664,8 @@ impl WakewordDetector {
                     .map(JoinHandle::join)
                     .filter_map(Result::unwrap)
                     .collect::<Vec<_>>()
-            };
-        if detections.is_empty() {
+                };
+                if detections.is_empty() {
             None
         } else {
             detections.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
@@ -691,6 +675,22 @@ impl WakewordDetector {
     pub fn get_samples_per_frame(&self) -> usize {
         self.samples_per_frame
     }
+}
+fn resample_audio(input_sample_rate: usize, audio_pcm_signed: &[f32]) -> Vec<f32> {
+    let mut resampler =
+        FftFixedInOut::<f32>::new(input_sample_rate, INTERNAL_SAMPLE_RATE, 480, 1).unwrap();
+    let mut out = resampler.output_buffer_allocate();
+    let resampled_audio = audio_pcm_signed
+        .chunks_exact(resampler.input_frames_next())
+        .map(|sample| {
+            resampler
+                .process_into_buffer(&[sample], &mut out[..], None)
+                .unwrap();
+            out.get(0).unwrap().to_vec()
+        })
+        .flatten()
+        .collect::<Vec<f32>>();
+    resampled_audio
 }
 
 fn run_wakeword_detection(
