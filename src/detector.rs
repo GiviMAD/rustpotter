@@ -2,13 +2,14 @@ use crate::comparator::FeatureComparator;
 use crate::nnnoiseless_fork::{self, DenoiseFeatures};
 use crate::wakeword::{Wakeword, WakewordModel};
 use hound::WavReader;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, load_from_mem, save_file, save_to_mem};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 static INTERNAL_SAMPLE_RATE: usize = 48000;
@@ -23,6 +24,7 @@ pub struct WakewordDetectorBuilder {
     vad_delay: Option<u16>,
     eager_mode: bool,
     single_thread: bool,
+    averaged_threshold: Option<f32>,
     threshold: Option<f32>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
@@ -41,6 +43,7 @@ impl WakewordDetectorBuilder {
             vad_delay: None,
             vad_sensitivity: None,
             threshold: None,
+            averaged_threshold: None,
             comparator_band_size: None,
             comparator_ref: None,
         }
@@ -56,6 +59,7 @@ impl WakewordDetectorBuilder {
             self.get_vad_delay(),
             self.get_vad_sensitivity(),
             self.get_threshold(),
+            self.get_averaged_threshold(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
         )
@@ -63,6 +67,10 @@ impl WakewordDetectorBuilder {
     pub fn set_threshold(&mut self, value: f32) {
         assert!(value >= 0. || value <= 1.);
         self.threshold = Some(value);
+    }
+    pub fn set_averaged_threshold(&mut self, value: f32) {
+        assert!(value >= 0. || value <= 1.);
+        self.averaged_threshold = Some(value);
     }
     pub fn set_bits_per_sample(&mut self, value: u16) {
         self.bits_per_sample = Some(value);
@@ -97,6 +105,9 @@ impl WakewordDetectorBuilder {
     }
     fn get_threshold(&self) -> f32 {
         self.threshold.unwrap_or(0.5)
+    }
+    fn get_averaged_threshold(&self) -> f32 {
+        self.averaged_threshold.unwrap_or(self.get_threshold() / 2.)
     }
     fn get_sample_rate(&self) -> usize {
         self.sample_rate.unwrap_or(INTERNAL_SAMPLE_RATE)
@@ -143,11 +154,11 @@ pub struct WakewordDetector {
     bits_per_sample: u16,
     // detection options
     threshold: f32,
-    comparator_band_size: usize,
-    comparator_ref: f32,
+    averaged_threshold: f32,
     eager_mode: bool,
     single_thread: bool,
     resampler: Option<FftFixedInOut<f32>>,
+    comparator: Arc<FeatureComparator>,
     vad_detector: Option<webrtc_vad::Vad>,
     vad_delay: u16,
     vad_sensitivity: f32,
@@ -157,7 +168,7 @@ pub struct WakewordDetector {
     min_frames: usize,
     max_frames: usize,
     frames: Vec<Vec<f32>>,
-    keywords: HashMap<String, Wakeword>,
+    wakewords: HashMap<String, Wakeword>,
     result_state: Option<DetectedWakeword>,
     extractor: DenoiseFeatures,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
@@ -178,6 +189,7 @@ impl WakewordDetector {
         vad_delay: u16,
         vad_sensitivity: f32,
         threshold: f32,
+        averaged_threshold: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
     ) -> Self {
@@ -201,18 +213,18 @@ impl WakewordDetector {
         };
         let detector = WakewordDetector {
             threshold,
+            averaged_threshold,
             sample_format,
             bits_per_sample,
             samples_per_frame,
             frames: Vec::new(),
-            keywords: HashMap::new(),
+            wakewords: HashMap::new(),
             buffering: true,
             min_frames: 9999,
             max_frames: 0,
             result_state: None,
             extractor: DenoiseFeatures::new(),
-            comparator_band_size,
-            comparator_ref,
+            comparator: Arc::new(FeatureComparator::new(comparator_band_size, comparator_ref)),
             resampler_out_buffer: if resampler.is_some() {
                 Some(resampler.as_ref().unwrap().output_buffer_allocate())
             } else {
@@ -233,31 +245,28 @@ impl WakewordDetector {
     pub fn add_keyword_from_model_bytes(
         &mut self,
         bytes: Vec<u8>,
-        enable_average: bool,
         enabled: bool,
     ) -> Result<(), String> {
         let model: WakewordModel = load_from_mem(&bytes, 0).or(Err("Unable to load model data"))?;
-        self.add_keyword_from_model(model, enable_average, enabled)
+        self.add_keyword_from_model(model, enabled)
     }
     pub fn add_keyword_from_model_file(
         &mut self,
         path: String,
-        enable_average: bool,
         enabled: bool,
     ) -> Result<(), String> {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
-        self.add_keyword_from_model(model, enable_average, enabled)
+        self.add_keyword_from_model(model, enabled)
     }
     fn add_keyword_from_model(
         &mut self,
         model: WakewordModel,
-        enable_average: bool,
         enabled: bool,
     ) -> Result<(), String> {
         let keyword = model.keyword.clone();
-        let wakeword = Wakeword::from_model(model, enable_average, enabled);
+        let wakeword = Wakeword::from_model(model, enabled);
         self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
-        self.keywords.insert(keyword, wakeword);
+        self.wakewords.insert(keyword, wakeword);
         Ok(())
     }
     pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
@@ -274,20 +283,17 @@ impl WakewordDetector {
     }
     pub fn add_keyword(
         &mut self,
-        keyword: String,
-        enable_average: bool,
+        name: String,
         enabled: bool,
+        averaged_threshold: Option<f32>,
         threshold: Option<f32>,
         templates: Vec<String>,
     ) {
-        info!(
-            "Adding keyword \"{}\" (templates: {:?})",
-            keyword, templates
-        );
-        if self.keywords.get_mut(&keyword).is_none() {
-            self.keywords.insert(
-                keyword.clone(),
-                Wakeword::new(enable_average, enabled, threshold),
+        debug!("Adding keyword \"{}\" (templates: {:?})", name, templates);
+        if self.wakewords.get_mut(&name).is_none() {
+            self.wakewords.insert(
+                name.clone(),
+                Wakeword::new(enabled, averaged_threshold, threshold),
             );
         }
         let mut min_frames: usize = 0;
@@ -295,7 +301,7 @@ impl WakewordDetector {
         for template in templates {
             match self.extract_features_from_file(template) {
                 Ok(features) => {
-                    let word = self.keywords.get_mut(&keyword).unwrap();
+                    let word = self.wakewords.get_mut(&name).unwrap();
                     word.add_features(features.to_vec());
                     min_frames = if min_frames == 0 {
                         word.get_min_frames()
@@ -312,13 +318,17 @@ impl WakewordDetector {
         self.update_detection_frame_size(min_frames, max_frames);
     }
     fn get_wakeword_model(&self, name: &String) -> Result<WakewordModel, String> {
-        let keyword = self.keywords.get(name);
-        if keyword.is_none() {
+        let wakeword = self.wakewords.get(name);
+        if wakeword.is_none() {
             Err(String::from("Missing wakeword"))
         } else {
-            let features = keyword.unwrap().get_templates();
-            let model =
-                WakewordModel::new(name.clone(), features, keyword.unwrap().get_threshold());
+            let features = wakeword.unwrap().get_templates();
+            let model = WakewordModel::new(
+                name.clone(),
+                features,
+                wakeword.unwrap().get_averaged_threshold(),
+                wakeword.unwrap().get_threshold(),
+            );
             Ok(model)
         }
     }
@@ -550,7 +560,7 @@ impl WakewordDetector {
                 if self.eager_mode {
                     if result.index != 0 {
                         debug!("Sorting '{}' templates", result.wakeword);
-                        self.keywords
+                        self.wakewords
                             .get_mut(&result.wakeword)
                             .unwrap()
                             .prioritize_template(result.index);
@@ -583,7 +593,22 @@ impl WakewordDetector {
                     None
                 }
             }
-            None => None,
+            None => {
+                if self.result_state.is_some() {
+                    let prev_result = self.result_state.as_ref().unwrap();
+                    let wakeword = prev_result.wakeword.clone();
+                    let score = prev_result.score;
+                    let index = prev_result.index;
+                    self.reset();
+                    Some(DetectedWakeword {
+                        wakeword,
+                        score,
+                        index,
+                    })
+                } else {
+                    None
+                }
+            },
         }
     }
     fn reset(&mut self) {
@@ -621,44 +646,53 @@ impl WakewordDetector {
     }
     fn get_best_keyword(&self, features: Vec<Vec<f32>>) -> Option<DetectedWakeword> {
         let mut detections: Vec<DetectedWakeword> =
-            if self.single_thread || self.keywords.len() <= 1 {
-                self.keywords
+            if self.single_thread || self.wakewords.len() <= 1 {
+                self.wakewords
                     .iter()
-                    .filter_map(|(name, keyword)| {
-                        let templates = keyword.get_templates();
-                        let threshold = keyword.get_threshold().unwrap_or(self.threshold);
+                    .filter_map(|(name, wakeword)| {
+                        let templates = wakeword.get_templates();
+                        let averaged_template = wakeword.get_averaged_template();
+                        let averaged_threshold = wakeword
+                            .get_averaged_threshold()
+                            .unwrap_or(self.averaged_threshold);
+                        let threshold = wakeword.get_threshold().unwrap_or(self.threshold);
                         run_wakeword_detection(
-                            self.comparator_band_size,
-                            self.comparator_ref,
+                            &self.comparator,
                             &templates,
+                            averaged_template,
                             self.eager_mode,
                             &features,
+                            averaged_threshold,
                             threshold,
                             name.clone(),
                         )
                     })
                     .collect::<Vec<_>>()
             } else {
-                self.keywords
+                self.wakewords
                     .iter()
-                    .filter_map(|(name, keyword)| {
-                        if !keyword.is_enabled() {
+                    .filter_map(|(name, wakeword)| {
+                        if !wakeword.is_enabled() {
                             None
                         } else {
                             let wakeword_name = name.clone();
-                            let threshold = keyword.get_threshold().unwrap_or(self.threshold);
-                            let templates = keyword.get_templates();
-                            let comparator_band_size = self.comparator_band_size;
-                            let comparator_ref = self.comparator_ref;
+                            let threshold = wakeword.get_threshold().unwrap_or(self.threshold);
+                            let averaged_threshold = wakeword
+                                .get_averaged_threshold()
+                                .unwrap_or(self.averaged_threshold);
+                            let templates = wakeword.get_templates();
+                            let averaged_template = wakeword.get_averaged_template();
+                            let comparator = self.comparator.clone();
                             let eager_mode = self.eager_mode;
                             let features_copy = features.to_vec();
                             Some(thread::spawn(move || {
                                 run_wakeword_detection(
-                                    comparator_band_size,
-                                    comparator_ref,
+                                    &comparator,
                                     &templates,
+                                    averaged_template,
                                     eager_mode,
                                     &features_copy,
+                                    averaged_threshold,
                                     threshold,
                                     wakeword_name,
                                 )
@@ -698,20 +732,32 @@ fn resample_audio(input_sample_rate: usize, audio_pcm_signed: &[f32]) -> Vec<f32
 }
 
 fn run_wakeword_detection(
-    comparator_band_size: usize,
-    comparator_ref: f32,
+    comparator: &FeatureComparator,
     templates: &[Vec<Vec<f32>>],
+    averaged_template: Option<Vec<Vec<f32>>>,
     eager_mode: bool,
     features: &[Vec<f32>],
+    averaged_threshold: f32,
     threshold: f32,
     wakeword_name: String,
 ) -> Option<DetectedWakeword> {
-    let comparator = FeatureComparator::new(comparator_band_size, comparator_ref);
+    if averaged_threshold > 0. && averaged_template.is_some() {
+        let template = averaged_template.unwrap();
+        let mut frames = features.to_vec();
+        if frames.len() > template.len() {
+            frames.drain(template.len()..frames.len());
+        }
+        let score = comparator.compare(
+            &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+            &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+        );
+        if score < averaged_threshold {
+            return None;
+        }
+        debug!("wakeword '{}' passes averaged detection with score {}", wakeword_name, score);
+    }
     let mut detection: Option<DetectedWakeword> = None;
     for (index, template) in templates.iter().enumerate() {
-        if eager_mode && detection.is_some() {
-            break;
-        }
         let mut frames = features.to_vec();
         if frames.len() > template.len() {
             frames.drain(template.len()..frames.len());
@@ -732,6 +778,9 @@ fn run_wakeword_detection(
             score,
             index,
         });
+        if eager_mode {
+            break;
+        }
     }
     detection
 }
