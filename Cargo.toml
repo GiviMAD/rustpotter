@@ -1,9 +1,9 @@
 [package]
 name = "rustpotter"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 license = "Apache-2.0"
-description = "A personal keywords spotter written in Rust"
+description = "A free and open source wake word spotter forged in rust."
 
 [dependencies]
 log = "0.4.6"

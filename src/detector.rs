@@ -362,17 +362,30 @@ impl WakewordDetector {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
         self.add_keyword_from_model(model, enabled)
     }
-    /// Generates the model file bytes from a loaded a wakeword
+    /// Generates the model file bytes from a loaded a wakeword.
     pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
         let model = self.get_wakeword_model(&name)?;
         save_to_mem(0, &model).or(Err(String::from("Unable to generate model bytes")))
     }
-    /// Generates a model file from a loaded a wakeword on the desired path
+    /// Generates a model file from a loaded a wakeword on the desired path.
     pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
         let model = self.get_wakeword_model(&name)?;
         save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
     }
     /// Adds a wakeword using wav samples.
+    /// 
+    /// ```
+    /// let mut word_detector = detector_builder.build();
+    /// word_detector.add_keyword(
+    ///     model_name.clone(),
+    ///     enabled,
+    ///     averaged_threshold,
+    ///     threshold,
+    ///     sample_paths,
+    /// );
+    /// // Save as model file
+    /// word_detector.generate_wakeword_model_file(model_name.clone(), model_path)?;
+    /// ```
     pub fn add_keyword(
         &mut self,
         name: String,
@@ -413,20 +426,29 @@ impl WakewordDetector {
         self.update_detection_frame_size(min_frames, max_frames);
     }
     /// Process i32 audio chunks.
+    /// 
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
+    /// 
     /// Assumes sample rate match the configured for the detector.
+    /// 
     /// Asserts that detector bits_per_sample is one of: 8, 16, 24, 32.
+    /// 
     /// Asserts that detector sample_format is 'int'.
+    /// 
     /// It's an alias for the process_i32 method.
     pub fn process(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
         self.process_i32(audio_chunk)
     }
     /// Process i8 audio chunks.
+    /// 
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
+    /// 
     /// Assumes sample rate match the configured for the detector.
+    /// 
     /// Asserts that detector bits_per_sample is 8.
+    /// 
     /// Asserts that detector sample_format is 'int'.
     pub fn process_i8(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
         assert!(self.bits_per_sample == 8);
@@ -438,10 +460,14 @@ impl WakewordDetector {
         )
     }
     /// Process i16 audio chunks.
+    /// 
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
+    /// 
     /// Assumes sample rate match the configured for the detector.
+    /// 
     /// Asserts that detector bits_per_sample is one of: 8, 16.
+    /// 
     /// Asserts that detector sample_format is 'int'.
     pub fn process_i16(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
         assert!(self.bits_per_sample == 8 || self.bits_per_sample == 16);
@@ -453,10 +479,14 @@ impl WakewordDetector {
         )
     }
     /// Process i32 audio chunks.
+    /// 
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
+    /// 
     /// Assumes sample rate match the configured for the detector.
+    /// 
     /// Asserts that detector bits_per_sample is one of: 8, 16, 24, 32.
+    /// 
     /// Asserts that detector sample_format is 'int'.
     pub fn process_i32(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
         assert!(
@@ -468,10 +498,14 @@ impl WakewordDetector {
         self.process_int(audio_chunk)
     }
     /// Process f32 audio chunks.
+    /// 
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
+    /// 
     /// Assumes sample rate match the configured for the detector.
+    /// 
     /// Asserts that detector bits_per_sample is 32.
+    /// 
     /// Asserts that detector sample_format is 'float'.
     pub fn process_f32(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
         assert!(audio_chunk.len() == self.samples_per_frame);
@@ -962,13 +996,13 @@ fn run_wakeword_detection(
     }
     detection
 }
-
+/// Represents a successful wakeword detection.
 pub struct DetectedWakeword {
-    // Detected wakeword name
+    /// Detected wakeword name.
     pub wakeword: String,
-    // Detection score
+    /// Detection score.
     pub score: f32,
-    // Detected wakeword template index
+    /// Detected wakeword template index.
     pub index: usize,
 }
 impl Clone for DetectedWakeword {

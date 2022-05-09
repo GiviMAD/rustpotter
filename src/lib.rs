@@ -1,3 +1,5 @@
+/// Rustpotter, a free and open source wake word spotter forged in rust.
+
 extern crate simple_matrix;
 extern crate savefile;
 #[macro_use]

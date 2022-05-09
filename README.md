@@ -1,6 +1,6 @@
 # Rustpotter
 
-## A personal keywords spotter written in Rust
+## A free and open source wake word spotter forged in rust
 
 <div align="center">
     <img src="./logo.png?raw=true" width="400px"</img> 
@@ -18,7 +18,7 @@ A CLI for Rustpotter is available [here](https://github.com/GiviMAD/rustpotter-c
 
 ## Some examples:
 
-### Create keyword model
+### Create keyword model:
 ```rust
 let mut detector_builder = detector::FeatureDetectorBuilder::new();
     let mut word_detector = detector_builder.build();
@@ -27,7 +27,7 @@ let mut detector_builder = detector::FeatureDetectorBuilder::new();
     word_detector.add_keyword(
         name.clone(),
         false,
-        true,
+        None,
         None,
         vec!["./<audio sample path>.wav", "./<audio sample path>2.wav", ...],
     );
