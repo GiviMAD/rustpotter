@@ -13,8 +13,19 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 static INTERNAL_SAMPLE_RATE: usize = 48000;
+/// Allowed vad modes
 pub type VadMode = webrtc_vad::VadMode;
+/// Allowed wav sample formats
 pub type SampleFormat = hound::SampleFormat;
+/// Use this struct to configure and build your wakeword detector.
+/// ```
+/// let mut word_detector = detector_builder
+///     .set_threshold(0.5)
+///     .set_sample_rate(16000)
+///     .set_eager_mode(true)
+///     .set_single_thread(true)
+///     .build();
+/// ```
 pub struct WakewordDetectorBuilder {
     sample_rate: Option<usize>,
     sample_format: Option<SampleFormat>,
@@ -64,44 +75,110 @@ impl WakewordDetectorBuilder {
             self.get_comparator_ref(),
         )
     }
-    pub fn set_threshold(&mut self, value: f32) {
+    /// Configures the detector threshold,
+    /// is the min score (in range 0. to 1.) that some of
+    /// the wakeword templates should obtain to trigger a detection.
+    ///
+    /// Defaults to 0.5, wakeword defined value takes prevalence if present.
+    pub fn set_threshold(&mut self, value: f32) -> &mut Self {
         assert!(value >= 0. || value <= 1.);
         self.threshold = Some(value);
+        self
     }
-    pub fn set_averaged_threshold(&mut self, value: f32) {
+    /// Configures the detector threshold,
+    /// is the min score (in range 0. to 1.) that  
+    /// the averaged wakeword template should obtain to allow
+    /// to continue with the detection. This way it can prevent to
+    /// run the comparison of the current frame against each of the wakeword templates.
+    /// If set to 0. this functionality is disabled.
+    ///
+    /// Defaults to half of the configured threshold, wakeword defined value takes prevalence if present.
+    pub fn set_averaged_threshold(&mut self, value: f32) -> &mut Self {
         assert!(value >= 0. || value <= 1.);
         self.averaged_threshold = Some(value);
+        self
     }
-    pub fn set_bits_per_sample(&mut self, value: u16) {
+    /// Configures the detector expected bit per sample for the audio chunks to process.
+    ///
+    /// Defaults to 16; Allowed values: 8, 16, 24, 32
+    pub fn set_bits_per_sample(&mut self, value: u16) -> &mut Self {
         self.bits_per_sample = Some(value);
+        self
     }
-    pub fn set_sample_rate(&mut self, value: usize) {
+    /// Configures the detector expected sample rate for the audio chunks to process.
+    ///
+    /// Defaults to 16000
+    pub fn set_sample_rate(&mut self, value: usize) -> &mut Self {
         self.sample_rate = Some(value);
+        self
     }
-    pub fn set_sample_format(&mut self, value: SampleFormat) {
+    /// Configures the detector expected sample format for the audio chunks to process.
+    ///
+    /// Defaults to int
+    pub fn set_sample_format(&mut self, value: SampleFormat) -> &mut Self {
         self.sample_format = Some(value);
+        self
     }
-    pub fn set_comparator_band_size(&mut self, value: usize) {
+    /// Configures the band-size for the comparator used to match the samples.
+    ///
+    /// Defaults to 6
+    pub fn set_comparator_band_size(&mut self, value: usize) -> &mut Self {
         self.comparator_band_size = Some(value);
+        self
     }
-    pub fn set_comparator_ref(&mut self, value: f32) {
+    /// Configures the reference for the comparator used to match the samples.
+    ///
+    /// Defaults to 0.22
+    pub fn set_comparator_ref(&mut self, value: f32) -> &mut Self {
         self.comparator_ref = Some(value);
+        self
     }
-    pub fn set_eager_mode(&mut self, value: bool) {
+    /// Enables eager mode.
+    /// Terminate the detection as son as one result is above the score,
+    /// instead of wait to see if the next frame has a higher score.
+    ///
+    /// Recommended for real usage.
+    ///
+    /// Defaults to false.
+    pub fn set_eager_mode(&mut self, value: bool) -> &mut Self {
         self.eager_mode = value;
+        self
     }
-    pub fn set_single_thread(&mut self, value: bool) {
+    /// Unless enabled the comparison against multiple wakewords run
+    /// in separate threads.
+    ///
+    /// Defaults to false.
+    ///
+    /// Only applies when more than a wakeword is loaded.
+    pub fn set_single_thread(&mut self, value: bool) -> &mut Self {
         self.single_thread = value;
+        self
     }
-    pub fn set_vad_delay(&mut self, value: u16) {
+    /// Seconds to disable the vad detector after voice is detected.
+    ///
+    /// Defaults to 3.
+    ///
+    /// Only applies if vad is enabled.
+    pub fn set_vad_delay(&mut self, value: u16) -> &mut Self {
         self.vad_delay = Some(value);
+        self
     }
-    pub fn set_vad_sensitivity(&mut self, value: f32) {
+    /// Voice/silence ratio in the last second to consider voice detected.
+    ///
+    /// Defaults to 0.5.
+    ///
+    /// Only applies if vad is enabled.
+    pub fn set_vad_sensitivity(&mut self, value: f32) -> &mut Self {
         assert!(value >= 0. || value <= 1.);
         self.vad_sensitivity = Some(value);
+        self
     }
-    pub fn set_vad_mode(&mut self, value: VadMode) {
+    /// Use a vad detector to reduce computation on absence of voice sound.
+    ///
+    /// Unless specified the vad detector is disabled.
+    pub fn set_vad_mode(&mut self, value: VadMode) -> &mut Self {
         self.vad_mode = Some(value);
+        self
     }
     fn get_threshold(&self) -> f32 {
         self.threshold.unwrap_or(0.5)
@@ -119,7 +196,7 @@ impl WakewordDetectorBuilder {
         self.bits_per_sample.unwrap_or(16)
     }
     fn get_comparator_band_size(&self) -> usize {
-        self.comparator_band_size.unwrap_or(6)
+        self.comparator_band_size.unwrap_or(11)
     }
     fn get_comparator_ref(&self) -> f32 {
         self.comparator_ref.unwrap_or(0.22)
@@ -148,6 +225,26 @@ impl WakewordDetectorBuilder {
         }
     }
 }
+/// This struct manages the wakeword generation and the spotting functionality.
+///
+/// ```
+/// // assuming the audio input format match the detector defaults
+/// let mut word_detector = detector_builder.build();
+/// // load and enable a wakeword
+/// word_detector.add_keyword_from_model("./model.rpw", true)?;
+/// let mut frame_buffer: Vec<i32> = vec![0; word_detector.get_samples_per_frame()];
+/// while true {
+///     // fill the buffer with new samples...
+///     let detection = word_detector.process(frame_buffer);
+///     if detection.is_some() {
+///         println!(
+///             "Detected '{}' with score {}!",
+///             detection.unwrap().wakeword,
+///             detection.unwrap().score,
+///         );
+///     }
+/// }
+/// ```
 pub struct WakewordDetector {
     // input options
     sample_format: SampleFormat,
@@ -172,11 +269,15 @@ pub struct WakewordDetector {
     result_state: Option<DetectedWakeword>,
     extractor: DenoiseFeatures,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
+    vad_enabled: bool,
     voice_detections: Vec<bool>,
     voice_detection_time: SystemTime,
     audio_cache: Vec<Vec<f32>>,
 }
 impl WakewordDetector {
+    /// Creates a new WakewordDetector.
+    ///
+    /// It is recommended to use the WakewordDetectorBuilder struct instead.
     pub fn new(
         // input options
         sample_rate: usize,
@@ -235,6 +336,7 @@ impl WakewordDetector {
             single_thread,
             voice_detections: Vec::with_capacity(100),
             audio_cache: Vec::with_capacity(100),
+            vad_enabled: false,
             vad_detector,
             vad_delay,
             vad_sensitivity,
@@ -242,6 +344,7 @@ impl WakewordDetector {
         };
         detector
     }
+    /// Loads a wakeword from its model bytes.
     pub fn add_keyword_from_model_bytes(
         &mut self,
         bytes: Vec<u8>,
@@ -250,6 +353,7 @@ impl WakewordDetector {
         let model: WakewordModel = load_from_mem(&bytes, 0).or(Err("Unable to load model data"))?;
         self.add_keyword_from_model(model, enabled)
     }
+    /// Loads a wakeword from its model path.
     pub fn add_keyword_from_model_file(
         &mut self,
         path: String,
@@ -258,38 +362,29 @@ impl WakewordDetector {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
         self.add_keyword_from_model(model, enabled)
     }
-    fn add_keyword_from_model(
-        &mut self,
-        model: WakewordModel,
-        enabled: bool,
-    ) -> Result<(), String> {
-        let keyword = model.keyword.clone();
-        let wakeword = Wakeword::from_model(model, enabled);
-        self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
-        self.wakewords.insert(keyword, wakeword);
-        Ok(())
-    }
-    pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
-        let model = self.get_wakeword_model(&name)?;
-        save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
-    }
+    /// Generates the model file bytes from a loaded a wakeword
     pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
         let model = self.get_wakeword_model(&name)?;
         save_to_mem(0, &model).or(Err(String::from("Unable to generate model bytes")))
     }
-    fn update_detection_frame_size(&mut self, min_frames: usize, max_frames: usize) {
-        self.min_frames = std::cmp::min(self.min_frames, min_frames);
-        self.max_frames = std::cmp::max(self.max_frames, max_frames);
+    /// Generates a model file from a loaded a wakeword on the desired path
+    pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
+        let model = self.get_wakeword_model(&name)?;
+        save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
     }
+    /// Adds a wakeword using wav samples.
     pub fn add_keyword(
         &mut self,
         name: String,
         enabled: bool,
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
-        templates: Vec<String>,
+        sample_paths: Vec<String>,
     ) {
-        debug!("Adding keyword \"{}\" (templates: {:?})", name, templates);
+        debug!(
+            "Adding keyword \"{}\" (sample paths: {:?})",
+            name, sample_paths
+        );
         if self.wakewords.get_mut(&name).is_none() {
             self.wakewords.insert(
                 name.clone(),
@@ -298,7 +393,7 @@ impl WakewordDetector {
         }
         let mut min_frames: usize = 0;
         let mut max_frames: usize = 0;
-        for template in templates {
+        for template in sample_paths {
             match self.extract_features_from_file(template) {
                 Ok(features) => {
                     let word = self.wakewords.get_mut(&name).unwrap();
@@ -317,6 +412,108 @@ impl WakewordDetector {
         }
         self.update_detection_frame_size(min_frames, max_frames);
     }
+    /// Process i32 audio chunks.
+    /// Asserts that the audio chunk length should match the return
+    /// of the get_samples_per_frame method.
+    /// Assumes sample rate match the configured for the detector.
+    /// Asserts that detector bits_per_sample is one of: 8, 16, 24, 32.
+    /// Asserts that detector sample_format is 'int'.
+    /// It's an alias for the process_i32 method.
+    pub fn process(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
+        self.process_i32(audio_chunk)
+    }
+    /// Process i8 audio chunks.
+    /// Asserts that the audio chunk length should match the return
+    /// of the get_samples_per_frame method.
+    /// Assumes sample rate match the configured for the detector.
+    /// Asserts that detector bits_per_sample is 8.
+    /// Asserts that detector sample_format is 'int'.
+    pub fn process_i8(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
+        assert!(self.bits_per_sample == 8);
+        self.process_int(
+            &audio_chunk
+                .into_iter()
+                .map(|i| *i as i32)
+                .collect::<Vec<_>>(),
+        )
+    }
+    /// Process i16 audio chunks.
+    /// Asserts that the audio chunk length should match the return
+    /// of the get_samples_per_frame method.
+    /// Assumes sample rate match the configured for the detector.
+    /// Asserts that detector bits_per_sample is one of: 8, 16.
+    /// Asserts that detector sample_format is 'int'.
+    pub fn process_i16(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
+        assert!(self.bits_per_sample == 8 || self.bits_per_sample == 16);
+        self.process_int(
+            &audio_chunk
+                .into_iter()
+                .map(|i| *i as i32)
+                .collect::<Vec<_>>(),
+        )
+    }
+    /// Process i32 audio chunks.
+    /// Asserts that the audio chunk length should match the return
+    /// of the get_samples_per_frame method.
+    /// Assumes sample rate match the configured for the detector.
+    /// Asserts that detector bits_per_sample is one of: 8, 16, 24, 32.
+    /// Asserts that detector sample_format is 'int'.
+    pub fn process_i32(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
+        assert!(
+            self.bits_per_sample == 8
+                || self.bits_per_sample == 16
+                || self.bits_per_sample == 24
+                || self.bits_per_sample == 32
+        );
+        self.process_int(audio_chunk)
+    }
+    /// Process f32 audio chunks.
+    /// Asserts that the audio chunk length should match the return
+    /// of the get_samples_per_frame method.
+    /// Assumes sample rate match the configured for the detector.
+    /// Asserts that detector bits_per_sample is 32.
+    /// Asserts that detector sample_format is 'float'.
+    pub fn process_f32(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
+        assert!(audio_chunk.len() == self.samples_per_frame);
+        assert!(self.bits_per_sample == 32);
+        assert!(self.sample_format == SampleFormat::Float);
+        let float_buffer: Vec<f32> = audio_chunk
+            .into_iter()
+            .map(|s| s * 32767.0)
+            .collect::<Vec<_>>();
+        let resampled_audio = if self.resampler.is_some() {
+            let resampler = self.resampler.as_mut().unwrap();
+            let waves_in = vec![float_buffer; 1];
+            let waves_out = self.resampler_out_buffer.as_mut().unwrap();
+            resampler
+                .process_into_buffer(&waves_in, waves_out, None)
+                .unwrap();
+            let result = waves_out.get(0).unwrap();
+            result.to_vec()
+        } else {
+            float_buffer
+        };
+        self.apply_vad_detection(resampled_audio)
+    }
+    /// Returns the desired chunk size.
+    pub fn get_samples_per_frame(&self) -> usize {
+        self.samples_per_frame
+    }
+    fn add_keyword_from_model(
+        &mut self,
+        model: WakewordModel,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let keyword = model.keyword.clone();
+        let wakeword = Wakeword::from_model(model, enabled);
+        self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
+        self.wakewords.insert(keyword, wakeword);
+        Ok(())
+    }
+    fn update_detection_frame_size(&mut self, min_frames: usize, max_frames: usize) {
+        self.min_frames = std::cmp::min(self.min_frames, min_frames);
+        self.max_frames = std::cmp::max(self.max_frames, max_frames);
+    }
     fn get_wakeword_model(&self, name: &String) -> Result<WakewordModel, String> {
         let wakeword = self.wakewords.get(name);
         if wakeword.is_none() {
@@ -331,36 +528,6 @@ impl WakewordDetector {
             );
             Ok(model)
         }
-    }
-    pub fn process(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
-        self.process_i32(audio_chunk)
-    }
-    pub fn process_i8(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
-        assert!(self.bits_per_sample == 8);
-        self.process_int(
-            &audio_chunk
-                .into_iter()
-                .map(|i| *i as i32)
-                .collect::<Vec<_>>(),
-        )
-    }
-    pub fn process_i16(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
-        assert!(self.bits_per_sample == 8 || self.bits_per_sample == 16);
-        self.process_int(
-            &audio_chunk
-                .into_iter()
-                .map(|i| *i as i32)
-                .collect::<Vec<_>>(),
-        )
-    }
-    pub fn process_i32(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
-        assert!(
-            self.bits_per_sample == 8
-                || self.bits_per_sample == 16
-                || self.bits_per_sample == 24
-                || self.bits_per_sample == 32
-        );
-        self.process_int(audio_chunk)
     }
     fn process_int(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
         assert!(audio_chunk.len() == self.samples_per_frame);
@@ -393,46 +560,33 @@ impl WakewordDetector {
         };
         self.apply_vad_detection(resampled_audio)
     }
-    pub fn process_f32(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
-        assert!(audio_chunk.len() == self.samples_per_frame);
-        assert!(self.bits_per_sample == 32);
-        assert!(self.sample_format == SampleFormat::Float);
-        let float_buffer: Vec<f32> = audio_chunk
-            .into_iter()
-            .map(|s| s * 32767.0)
-            .collect::<Vec<_>>();
-        let resampled_audio = if self.resampler.is_some() {
-            let resampler = self.resampler.as_mut().unwrap();
-            let waves_in = vec![float_buffer; 1];
-            let waves_out = self.resampler_out_buffer.as_mut().unwrap();
-            resampler
-                .process_into_buffer(&waves_in, waves_out, None)
-                .unwrap();
-            let result = waves_out.get(0).unwrap();
-            result.to_vec()
-        } else {
-            float_buffer
-        };
-        self.apply_vad_detection(resampled_audio)
-    }
     fn apply_vad_detection(&mut self, resampled_audio: Vec<f32>) -> Option<DetectedWakeword> {
-        if self.vad_detector.is_some()
-            && self.voice_detection_time.elapsed().unwrap().as_secs() >= self.vad_delay as u64
+        if self.result_state.is_none()
+            && self.vad_detector.is_some()
+            && (self.vad_enabled
+                || self.voice_detection_time.elapsed().unwrap().as_secs() >= self.vad_delay as u64)
         {
             let vad = self.vad_detector.as_mut().unwrap();
+            if !self.vad_enabled {
+                debug!("switching to vad detector");
+                self.vad_enabled = true;
+            }
             let is_voice_result = vad.is_voice_segment(
                 &resampled_audio
                     .iter()
                     .map(|i| *i as i16)
                     .collect::<Vec<i16>>(),
             );
-            if self.voice_detections.len() == 100 {
-                self.voice_detections.drain(0..1);
-            }
             self.voice_detections
                 .push(is_voice_result.is_err() || is_voice_result.unwrap());
+            if self.voice_detections.len() < 30 {
+                return self.process_encoded_audio(&resampled_audio, true);
+            }
+            if self.voice_detections.len() > 100 {
+                self.voice_detections.drain(0..1);
+            }
             if self.voice_detections.iter().filter(|i| **i == true).count()
-                >= (self.vad_sensitivity * 100.) as usize
+                >= (self.vad_sensitivity * self.voice_detections.len() as f32) as usize
             {
                 debug!("voice detected; processing cache");
                 self.audio_cache
@@ -444,12 +598,13 @@ impl WakewordDetector {
                     });
                 self.voice_detections.clear();
                 self.voice_detection_time = SystemTime::now();
-                debug!("detection time updated, processing last frame");
+                debug!("switching to feature detector");
+                self.vad_enabled = false;
                 self.process_encoded_audio(&resampled_audio, true)
             } else {
-                if self.audio_cache.len() >= self.min_frames {
+                if self.audio_cache.len() >= self.max_frames {
                     self.audio_cache
-                        .drain(0..=self.audio_cache.len() - self.min_frames);
+                        .drain(0..=self.audio_cache.len() - self.max_frames);
                 }
                 self.audio_cache.push(resampled_audio);
                 None
@@ -557,6 +712,11 @@ impl WakewordDetector {
         let result_option = self.get_best_keyword(features);
         match result_option {
             Some(result) => {
+                if self.vad_enabled {
+                    self.vad_enabled = false;
+                    debug!("switching to feature detector");
+                }
+                self.voice_detection_time = SystemTime::now();
                 if self.eager_mode {
                     if result.index != 0 {
                         debug!("Sorting '{}' templates", result.wakeword);
@@ -573,9 +733,10 @@ impl WakewordDetector {
                     Some(result)
                 } else {
                     if self.result_state.is_some() {
-                        let prev_wakeword = self.result_state.as_ref().unwrap().wakeword.clone();
-                        let prev_score = self.result_state.as_ref().unwrap().score;
-                        let prev_index = self.result_state.as_ref().unwrap().index;
+                        let prev_result = self.result_state.as_ref().unwrap();
+                        let prev_wakeword = prev_result.wakeword.clone();
+                        let prev_score = prev_result.score;
+                        let prev_index = prev_result.index;
                         if result.wakeword == prev_wakeword && result.score < prev_score {
                             debug!(
                                 "keyword '{}' detected, score {}",
@@ -608,7 +769,7 @@ impl WakewordDetector {
                 } else {
                     None
                 }
-            },
+            }
         }
     }
     fn reset(&mut self) {
@@ -650,11 +811,21 @@ impl WakewordDetector {
                 self.wakewords
                     .iter()
                     .filter_map(|(name, wakeword)| {
+                        if !wakeword.is_enabled()
+                            || self.result_state.is_some()
+                                && self.result_state.as_ref().unwrap().wakeword != *name
+                        {
+                            return None;
+                        }
                         let templates = wakeword.get_templates();
                         let averaged_template = wakeword.get_averaged_template();
-                        let averaged_threshold = wakeword
-                            .get_averaged_threshold()
-                            .unwrap_or(self.averaged_threshold);
+                        let averaged_threshold = if self.result_state.is_none() {
+                            wakeword
+                                .get_averaged_threshold()
+                                .unwrap_or(self.averaged_threshold)
+                        } else {
+                            0.
+                        };
                         let threshold = wakeword.get_threshold().unwrap_or(self.threshold);
                         run_wakeword_detection(
                             &self.comparator,
@@ -672,32 +843,38 @@ impl WakewordDetector {
                 self.wakewords
                     .iter()
                     .filter_map(|(name, wakeword)| {
-                        if !wakeword.is_enabled() {
-                            None
-                        } else {
-                            let wakeword_name = name.clone();
-                            let threshold = wakeword.get_threshold().unwrap_or(self.threshold);
-                            let averaged_threshold = wakeword
-                                .get_averaged_threshold()
-                                .unwrap_or(self.averaged_threshold);
-                            let templates = wakeword.get_templates();
-                            let averaged_template = wakeword.get_averaged_template();
-                            let comparator = self.comparator.clone();
-                            let eager_mode = self.eager_mode;
-                            let features_copy = features.to_vec();
-                            Some(thread::spawn(move || {
-                                run_wakeword_detection(
-                                    &comparator,
-                                    &templates,
-                                    averaged_template,
-                                    eager_mode,
-                                    &features_copy,
-                                    averaged_threshold,
-                                    threshold,
-                                    wakeword_name,
-                                )
-                            }))
+                        if !wakeword.is_enabled()
+                            || self.result_state.is_some()
+                                && self.result_state.as_ref().unwrap().wakeword != *name
+                        {
+                            return None;
                         }
+                        let wakeword_name = name.clone();
+                        let threshold = wakeword.get_threshold().unwrap_or(self.threshold);
+                        let averaged_threshold = if self.result_state.is_none() {
+                            wakeword
+                                .get_averaged_threshold()
+                                .unwrap_or(self.averaged_threshold)
+                        } else {
+                            0.
+                        };
+                        let templates = wakeword.get_templates();
+                        let averaged_template = wakeword.get_averaged_template();
+                        let comparator = self.comparator.clone();
+                        let eager_mode = self.eager_mode;
+                        let features_copy = features.to_vec();
+                        Some(thread::spawn(move || {
+                            run_wakeword_detection(
+                                &comparator,
+                                &templates,
+                                averaged_template,
+                                eager_mode,
+                                &features_copy,
+                                averaged_threshold,
+                                threshold,
+                                wakeword_name,
+                            )
+                        }))
                     })
                     .map(JoinHandle::join)
                     .filter_map(Result::unwrap)
@@ -709,9 +886,6 @@ impl WakewordDetector {
             detections.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
             Some(detections.remove(0))
         }
-    }
-    pub fn get_samples_per_frame(&self) -> usize {
-        self.samples_per_frame
     }
 }
 fn resample_audio(input_sample_rate: usize, audio_pcm_signed: &[f32]) -> Vec<f32> {
@@ -754,7 +928,10 @@ fn run_wakeword_detection(
         if score < averaged_threshold {
             return None;
         }
-        debug!("wakeword '{}' passes averaged detection with score {}", wakeword_name, score);
+        debug!(
+            "wakeword '{}' passes averaged detection with score {}",
+            wakeword_name, score
+        );
     }
     let mut detection: Option<DetectedWakeword> = None;
     for (index, template) in templates.iter().enumerate() {
@@ -766,6 +943,7 @@ fn run_wakeword_detection(
             &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
             &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
         );
+        debug!("wakeword '{}' scored {}", wakeword_name, score);
         if score < threshold {
             continue;
         }

@@ -25,8 +25,8 @@ impl WakewordModel {
         WakewordModel {
             keyword,
             templates,
-            threshold,
             averaged_threshold,
+            threshold,
         }
     }
 }
@@ -44,7 +44,13 @@ impl Wakeword {
         Wakeword {
             enabled,
             threshold,
-            averaged_threshold,
+            averaged_threshold: if averaged_threshold.is_some() {
+                averaged_threshold
+            } else if threshold.is_some() {
+                Some(threshold.unwrap() / 2.)
+            } else {
+                None
+            },
             templates: vec![],
             averaged_template: None,
         }
