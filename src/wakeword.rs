@@ -10,20 +10,20 @@ pub struct Wakeword {
 
 #[derive(Savefile)]
 pub struct WakewordModel {
-    pub keyword: String,
+    pub name: String,
     threshold: Option<f32>,
     averaged_threshold: Option<f32>,
     templates: Vec<Vec<Vec<f32>>>,
 }
 impl WakewordModel {
     pub fn new(
-        keyword: String,
+        name: String,
         templates: Vec<Vec<Vec<f32>>>,
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
     ) -> Self {
         WakewordModel {
-            keyword,
+            name,
             templates,
             averaged_threshold,
             threshold,

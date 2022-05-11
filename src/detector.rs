@@ -59,6 +59,7 @@ impl WakewordDetectorBuilder {
             comparator_ref: None,
         }
     }
+    /// construct the wakeword detector
     pub fn build(&self) -> WakewordDetector {
         WakewordDetector::new(
             self.get_sample_rate(),
@@ -231,7 +232,7 @@ impl WakewordDetectorBuilder {
 /// // assuming the audio input format match the detector defaults
 /// let mut word_detector = detector_builder.build();
 /// // load and enable a wakeword
-/// word_detector.add_keyword_from_model("./model.rpw", true)?;
+/// word_detector.add_wakeword_from_model_file("./model.rpw", true)?;
 /// let mut frame_buffer: Vec<i32> = vec![0; word_detector.get_samples_per_frame()];
 /// while true {
 ///     // fill the buffer with new samples...
@@ -345,22 +346,22 @@ impl WakewordDetector {
         detector
     }
     /// Loads a wakeword from its model bytes.
-    pub fn add_keyword_from_model_bytes(
+    pub fn add_wakeword_from_model_bytes(
         &mut self,
         bytes: Vec<u8>,
         enabled: bool,
     ) -> Result<(), String> {
         let model: WakewordModel = load_from_mem(&bytes, 0).or(Err("Unable to load model data"))?;
-        self.add_keyword_from_model(model, enabled)
+        self.add_wakeword_from_model(model, enabled)
     }
     /// Loads a wakeword from its model path.
-    pub fn add_keyword_from_model_file(
+    pub fn add_wakeword_from_model_file(
         &mut self,
         path: String,
         enabled: bool,
     ) -> Result<(), String> {
         let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
-        self.add_keyword_from_model(model, enabled)
+        self.add_wakeword_from_model(model, enabled)
     }
     /// Generates the model file bytes from a loaded a wakeword.
     pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
@@ -376,7 +377,7 @@ impl WakewordDetector {
     /// 
     /// ```
     /// let mut word_detector = detector_builder.build();
-    /// word_detector.add_keyword(
+    /// word_detector.add_wakeword(
     ///     model_name.clone(),
     ///     enabled,
     ///     averaged_threshold,
@@ -386,7 +387,7 @@ impl WakewordDetector {
     /// // Save as model file
     /// word_detector.generate_wakeword_model_file(model_name.clone(), model_path)?;
     /// ```
-    pub fn add_keyword(
+    pub fn add_wakeword(
         &mut self,
         name: String,
         enabled: bool,
@@ -395,7 +396,7 @@ impl WakewordDetector {
         sample_paths: Vec<String>,
     ) {
         debug!(
-            "Adding keyword \"{}\" (sample paths: {:?})",
+            "Adding wakeword \"{}\" (sample paths: {:?})",
             name, sample_paths
         );
         if self.wakewords.get_mut(&name).is_none() {
@@ -533,15 +534,15 @@ impl WakewordDetector {
     pub fn get_samples_per_frame(&self) -> usize {
         self.samples_per_frame
     }
-    fn add_keyword_from_model(
+    fn add_wakeword_from_model(
         &mut self,
         model: WakewordModel,
         enabled: bool,
     ) -> Result<(), String> {
-        let keyword = model.keyword.clone();
+        let wakeword_name = model.name.clone();
         let wakeword = Wakeword::from_model(model, enabled);
         self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
-        self.wakewords.insert(keyword, wakeword);
+        self.wakewords.insert(wakeword_name, wakeword);
         Ok(())
     }
     fn update_detection_frame_size(&mut self, min_frames: usize, max_frames: usize) {
@@ -743,7 +744,7 @@ impl WakewordDetector {
     }
     fn run_detection(&mut self) -> Option<DetectedWakeword> {
         let features = self.normalize_features(self.frames.to_vec());
-        let result_option = self.get_best_keyword(features);
+        let result_option = self.get_best_wakeword(features);
         match result_option {
             Some(result) => {
                 if self.vad_enabled {
@@ -760,7 +761,7 @@ impl WakewordDetector {
                             .prioritize_template(result.index);
                     }
                     debug!(
-                        "keyword '{}' detected, score {}",
+                        "wakeword '{}' detected, score {}",
                         result.wakeword, result.score
                     );
                     self.reset();
@@ -773,7 +774,7 @@ impl WakewordDetector {
                         let prev_index = prev_result.index;
                         if result.wakeword == prev_wakeword && result.score < prev_score {
                             debug!(
-                                "keyword '{}' detected, score {}",
+                                "wakeword '{}' detected, score {}",
                                 result.wakeword, prev_score
                             );
                             self.reset();
@@ -839,7 +840,7 @@ impl WakewordDetector {
         }
         normalized_frames
     }
-    fn get_best_keyword(&self, features: Vec<Vec<f32>>) -> Option<DetectedWakeword> {
+    fn get_best_wakeword(&self, features: Vec<Vec<f32>>) -> Option<DetectedWakeword> {
         let mut detections: Vec<DetectedWakeword> =
             if self.single_thread || self.wakewords.len() <= 1 {
                 self.wakewords

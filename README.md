@@ -18,13 +18,13 @@ A CLI for Rustpotter is available [here](https://github.com/GiviMAD/rustpotter-c
 
 ## Some examples:
 
-### Create keyword model:
+### Create wakeword model:
 ```rust
 let mut detector_builder = detector::FeatureDetectorBuilder::new();
     let mut word_detector = detector_builder.build();
     let name = String::from("hey home");
     let path = String::from("./hey_home.rpw");
-    word_detector.add_keyword(
+    word_detector.add_wakeword(
         name.clone(),
         false,
         None,
@@ -42,15 +42,15 @@ let mut detector_builder = detector::FeatureDetectorBuilder::new();
 ```
 
 
-### Spot keyword:
+### Spot wakeword:
 ```rust
     let mut detector_builder = detector::FeatureDetectorBuilder::new();
     detector_builder.set_threshold(0.4);
     detector_builder.set_sample_rate(16000);
     let mut word_detector = detector_builder.build();
-    let result = word_detector.add_keyword_from_model(command.model_path, command.average_templates, true, None);
+    let result = word_detector.add_wakeword_from_model(command.model_path, command.average_templates, true, None);
     if result.is_err() {
-        panic!("Unable to load keyword model");
+        panic!("Unable to load wakeword model");
     }
     while true {
         let mut frame_buffer: Vec<i16> = vec![0; word_detector.get_samples_per_frame()];
