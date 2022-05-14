@@ -30,6 +30,7 @@ pub struct WakewordDetectorBuilder {
     sample_rate: Option<usize>,
     sample_format: Option<SampleFormat>,
     bits_per_sample: Option<u16>,
+    channels: Option<u16>,
     vad_mode: Option<VadMode>,
     vad_sensitivity: Option<f32>,
     vad_delay: Option<u16>,
@@ -47,6 +48,7 @@ impl WakewordDetectorBuilder {
             sample_rate: None,
             sample_format: None,
             bits_per_sample: None,
+            channels: None,
             // detection options
             eager_mode: false,
             single_thread: false,
@@ -65,6 +67,7 @@ impl WakewordDetectorBuilder {
             self.get_sample_rate(),
             self.get_sample_format(),
             self.get_bits_per_sample(),
+            self.get_channels(),
             self.get_eager_mode(),
             self.get_single_thread(),
             self.get_vad_mode(),
@@ -118,6 +121,14 @@ impl WakewordDetectorBuilder {
     /// Defaults to int
     pub fn set_sample_format(&mut self, value: SampleFormat) -> &mut Self {
         self.sample_format = Some(value);
+        self
+    }
+    /// Configures the detector expected number of channels for the audio chunks to process.
+    /// Rustpotter will only use data for first channel.
+    ///
+    /// Defaults to 1
+    pub fn set_channels(&mut self, value: u16) -> &mut Self {
+        self.channels = Some(value);
         self
     }
     /// Configures the band-size for the comparator used to match the samples.
@@ -196,6 +207,9 @@ impl WakewordDetectorBuilder {
     fn get_bits_per_sample(&self) -> u16 {
         self.bits_per_sample.unwrap_or(16)
     }
+    fn get_channels(&self) -> u16 {
+        self.channels.unwrap_or(1)
+    }
     fn get_comparator_band_size(&self) -> usize {
         self.comparator_band_size.unwrap_or(11)
     }
@@ -250,6 +264,7 @@ pub struct WakewordDetector {
     // input options
     sample_format: SampleFormat,
     bits_per_sample: u16,
+    channels: u16,
     // detection options
     threshold: f32,
     averaged_threshold: f32,
@@ -284,6 +299,7 @@ impl WakewordDetector {
         sample_rate: usize,
         sample_format: SampleFormat,
         bits_per_sample: u16,
+        channels: u16,
         // detection options
         eager_mode: bool,
         single_thread: bool,
@@ -295,12 +311,12 @@ impl WakewordDetector {
         comparator_band_size: usize,
         comparator_ref: f32,
     ) -> Self {
-        let mut samples_per_frame = 480;
+        let mut samples_per_frame = 480 * channels as usize;
         let resampler = if sample_rate != INTERNAL_SAMPLE_RATE {
             let resampler =
                 FftFixedInOut::<f32>::new(sample_rate, INTERNAL_SAMPLE_RATE, samples_per_frame, 1)
                     .unwrap();
-            samples_per_frame = resampler.input_frames_next();
+            samples_per_frame = resampler.input_frames_next() * channels as usize;
             Some(resampler)
         } else {
             None
@@ -319,6 +335,7 @@ impl WakewordDetector {
             sample_format,
             bits_per_sample,
             samples_per_frame,
+            channels,
             frames: Vec::new(),
             wakewords: HashMap::new(),
             buffering: true,
@@ -374,7 +391,7 @@ impl WakewordDetector {
         save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
     }
     /// Adds a wakeword using wav samples.
-    /// 
+    ///
     /// ```
     /// let mut word_detector = detector_builder.build();
     /// word_detector.add_wakeword(
@@ -427,29 +444,29 @@ impl WakewordDetector {
         self.update_detection_frame_size(min_frames, max_frames);
     }
     /// Process i32 audio chunks.
-    /// 
+    ///
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
-    /// 
+    ///
     /// Assumes sample rate match the configured for the detector.
-    /// 
+    ///
     /// Asserts that detector bits_per_sample is one of: 8, 16, 24, 32.
-    /// 
+    ///
     /// Asserts that detector sample_format is 'int'.
-    /// 
+    ///
     /// It's an alias for the process_i32 method.
     pub fn process(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
         self.process_i32(audio_chunk)
     }
     /// Process i8 audio chunks.
-    /// 
+    ///
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
-    /// 
+    ///
     /// Assumes sample rate match the configured for the detector.
-    /// 
+    ///
     /// Asserts that detector bits_per_sample is 8.
-    /// 
+    ///
     /// Asserts that detector sample_format is 'int'.
     pub fn process_i8(&mut self, audio_chunk: &[i8]) -> Option<DetectedWakeword> {
         assert!(self.bits_per_sample == 8);
@@ -461,14 +478,14 @@ impl WakewordDetector {
         )
     }
     /// Process i16 audio chunks.
-    /// 
+    ///
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
-    /// 
+    ///
     /// Assumes sample rate match the configured for the detector.
-    /// 
+    ///
     /// Asserts that detector bits_per_sample is one of: 8, 16.
-    /// 
+    ///
     /// Asserts that detector sample_format is 'int'.
     pub fn process_i16(&mut self, audio_chunk: &[i16]) -> Option<DetectedWakeword> {
         assert!(self.bits_per_sample == 8 || self.bits_per_sample == 16);
@@ -480,14 +497,14 @@ impl WakewordDetector {
         )
     }
     /// Process i32 audio chunks.
-    /// 
+    ///
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
-    /// 
+    ///
     /// Assumes sample rate match the configured for the detector.
-    /// 
+    ///
     /// Asserts that detector bits_per_sample is one of: 8, 16, 24, 32.
-    /// 
+    ///
     /// Asserts that detector sample_format is 'int'.
     pub fn process_i32(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
         assert!(
@@ -499,23 +516,31 @@ impl WakewordDetector {
         self.process_int(audio_chunk)
     }
     /// Process f32 audio chunks.
-    /// 
+    ///
     /// Asserts that the audio chunk length should match the return
     /// of the get_samples_per_frame method.
-    /// 
+    ///
     /// Assumes sample rate match the configured for the detector.
-    /// 
+    ///
     /// Asserts that detector bits_per_sample is 32.
-    /// 
+    ///
     /// Asserts that detector sample_format is 'float'.
     pub fn process_f32(&mut self, audio_chunk: &[f32]) -> Option<DetectedWakeword> {
         assert!(audio_chunk.len() == self.samples_per_frame);
         assert!(self.bits_per_sample == 32);
         assert!(self.sample_format == SampleFormat::Float);
-        let float_buffer: Vec<f32> = audio_chunk
-            .into_iter()
-            .map(|s| s * 32767.0)
-            .collect::<Vec<_>>();
+        let float_buffer: Vec<f32> = if self.channels != 1 {
+            audio_chunk
+                .chunks_exact(self.channels as usize)
+                .map(|chunk| chunk[0])
+                .map(|s| s * 32767.0)
+                .collect::<Vec<_>>()
+        } else {
+            audio_chunk
+                .into_iter()
+                .map(|s| s * 32767.0)
+                .collect::<Vec<_>>()
+        };
         let resampled_audio = if self.resampler.is_some() {
             let resampler = self.resampler.as_mut().unwrap();
             let waves_in = vec![float_buffer; 1];
@@ -570,16 +595,30 @@ impl WakewordDetector {
         let resampled_audio = if self.resampler.is_some() {
             let resampler = self.resampler.as_mut().unwrap();
             let bits_per_sample = self.bits_per_sample;
-            let float_buffer: Vec<f32> = audio_chunk
-                .into_iter()
-                .map(move |s| {
-                    if bits_per_sample < 16 {
-                        (*s << (16 - bits_per_sample)) as f32
-                    } else {
-                        (*s >> (bits_per_sample - 16)) as f32
-                    }
-                })
-                .collect::<Vec<_>>();
+            let float_buffer = if self.channels != 1 {
+                audio_chunk
+                    .chunks_exact(self.channels as usize)
+                    .map(|chunk| chunk[0])
+                    .map(|s| {
+                        if bits_per_sample < 16 {
+                            (s << (16 - bits_per_sample)) as f32
+                        } else {
+                            (s >> (bits_per_sample - 16)) as f32
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                audio_chunk
+                    .into_iter()
+                    .map(|s| {
+                        if bits_per_sample < 16 {
+                            (*s << (16 - bits_per_sample)) as f32
+                        } else {
+                            (*s >> (bits_per_sample - 16)) as f32
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
             let waves_in = vec![float_buffer; 1];
             let waves_out = self.resampler_out_buffer.as_mut().unwrap();
             resampler
@@ -685,24 +724,21 @@ impl WakewordDetector {
         let sample_format = wav_reader.spec().sample_format;
         let bits_per_sample = wav_reader.spec().bits_per_sample;
         let channels = wav_reader.spec().channels;
-        if channels != 1 {
-            return Err("Only samples with 1 channels are supported for now".to_string());
-        }
         let audio_pcm_signed_resampled = match sample_format {
             SampleFormat::Int => {
                 let bits_per_sample = bits_per_sample;
                 assert!(bits_per_sample <= 32);
                 let samples = wav_reader
                     .into_samples::<i32>()
-                    .map(move |s| {
-                        s.map(|s| {
+                    .collect::<Vec<_>>()
+                    .chunks_exact(channels as usize)
+                    .map(|chunk| chunk[0].as_ref().unwrap())
+                    .map(|s| {
                             if bits_per_sample < 16 {
-                                (s << (16 - bits_per_sample)) as f32
+                                (*s << (16 - bits_per_sample)) as f32
                             } else {
-                                (s >> (bits_per_sample - 16)) as f32
+                                (*s >> (bits_per_sample - 16)) as f32
                             }
-                        })
-                        .unwrap()
                     })
                     .collect::<Vec<_>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
@@ -714,7 +750,11 @@ impl WakewordDetector {
             SampleFormat::Float => {
                 let samples = wav_reader
                     .into_samples::<f32>()
-                    .map(|s| s.map(|s| s * 32767.0).unwrap())
+                    .collect::<Vec<_>>()
+                    .chunks_exact(channels as usize)
+                    .map(|chunk| chunk[0].as_ref().unwrap())
+                    
+                    .map(|s|  *s * 32767.0)
                     .collect::<Vec<_>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
                     resample_audio(sample_rate as usize, &samples)
