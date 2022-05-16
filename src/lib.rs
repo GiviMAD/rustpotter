@@ -12,6 +12,7 @@ mod nnnoiseless_fork;
 mod wakeword;
 pub use detector::DetectedWakeword;
 pub use detector::SampleFormat;
-pub use detector::VadMode;
 pub use detector::WakewordDetector;
 pub use detector::WakewordDetectorBuilder;
+#[cfg(feature = "vad")]
+pub use detector::VadMode;

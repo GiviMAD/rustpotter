@@ -11,8 +11,11 @@ use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+#[cfg(feature = "vad")]
 use std::time::SystemTime;
 static INTERNAL_SAMPLE_RATE: usize = 48000;
+
+#[cfg(feature = "vad")]
 /// Allowed vad modes
 pub type VadMode = webrtc_vad::VadMode;
 /// Allowed wav sample formats
@@ -31,8 +34,11 @@ pub struct WakewordDetectorBuilder {
     sample_format: Option<SampleFormat>,
     bits_per_sample: Option<u16>,
     channels: Option<u16>,
+    #[cfg(feature = "vad")]
     vad_mode: Option<VadMode>,
+    #[cfg(feature = "vad")]
     vad_sensitivity: Option<f32>,
+    #[cfg(feature = "vad")]
     vad_delay: Option<u16>,
     eager_mode: bool,
     single_thread: bool,
@@ -52,8 +58,11 @@ impl WakewordDetectorBuilder {
             // detection options
             eager_mode: false,
             single_thread: false,
+            #[cfg(feature = "vad")]
             vad_mode: None,
+            #[cfg(feature = "vad")]
             vad_delay: None,
+            #[cfg(feature = "vad")]
             vad_sensitivity: None,
             threshold: None,
             averaged_threshold: None,
@@ -70,13 +79,16 @@ impl WakewordDetectorBuilder {
             self.get_channels(),
             self.get_eager_mode(),
             self.get_single_thread(),
-            self.get_vad_mode(),
-            self.get_vad_delay(),
-            self.get_vad_sensitivity(),
             self.get_threshold(),
             self.get_averaged_threshold(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
+            #[cfg(feature = "vad")]
+            self.get_vad_mode(),
+            #[cfg(feature = "vad")]
+            self.get_vad_delay(),
+            #[cfg(feature = "vad")]
+            self.get_vad_sensitivity(),
         )
     }
     /// Configures the detector threshold,
@@ -166,6 +178,7 @@ impl WakewordDetectorBuilder {
         self.single_thread = value;
         self
     }
+    #[cfg(feature = "vad")]
     /// Seconds to disable the vad detector after voice is detected.
     ///
     /// Defaults to 3.
@@ -175,6 +188,7 @@ impl WakewordDetectorBuilder {
         self.vad_delay = Some(value);
         self
     }
+    #[cfg(feature = "vad")]
     /// Voice/silence ratio in the last second to consider voice detected.
     ///
     /// Defaults to 0.5.
@@ -185,6 +199,7 @@ impl WakewordDetectorBuilder {
         self.vad_sensitivity = Some(value);
         self
     }
+    #[cfg(feature = "vad")]
     /// Use a vad detector to reduce computation on absence of voice sound.
     ///
     /// Unless specified the vad detector is disabled.
@@ -222,12 +237,15 @@ impl WakewordDetectorBuilder {
     fn get_single_thread(&self) -> bool {
         self.single_thread
     }
+    #[cfg(feature = "vad")]
     fn get_vad_sensitivity(&self) -> f32 {
         self.vad_sensitivity.unwrap_or(0.5)
     }
+    #[cfg(feature = "vad")]
     fn get_vad_delay(&self) -> u16 {
         self.vad_delay.unwrap_or(3)
     }
+    #[cfg(feature = "vad")]
     fn get_vad_mode(&self) -> Option<VadMode> {
         if self.vad_mode.is_none() {
             return None;
@@ -272,8 +290,11 @@ pub struct WakewordDetector {
     single_thread: bool,
     resampler: Option<FftFixedInOut<f32>>,
     comparator: Arc<FeatureComparator>,
+    #[cfg(feature = "vad")]
     vad_detector: Option<webrtc_vad::Vad>,
+    #[cfg(feature = "vad")]
     vad_delay: u16,
+    #[cfg(feature = "vad")]
     vad_sensitivity: f32,
     // state
     samples_per_frame: usize,
@@ -285,9 +306,13 @@ pub struct WakewordDetector {
     result_state: Option<DetectedWakeword>,
     extractor: DenoiseFeatures,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
+    #[cfg(feature = "vad")]
     vad_enabled: bool,
+    #[cfg(feature = "vad")]
     voice_detections: Vec<bool>,
+    #[cfg(feature = "vad")]
     voice_detection_time: SystemTime,
+    #[cfg(feature = "vad")]
     audio_cache: Vec<Vec<f32>>,
 }
 impl WakewordDetector {
@@ -303,13 +328,13 @@ impl WakewordDetector {
         // detection options
         eager_mode: bool,
         single_thread: bool,
-        vad_mode: Option<VadMode>,
-        vad_delay: u16,
-        vad_sensitivity: f32,
         threshold: f32,
         averaged_threshold: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
+        #[cfg(feature = "vad")] vad_mode: Option<VadMode>,
+        #[cfg(feature = "vad")] vad_delay: u16,
+        #[cfg(feature = "vad")] vad_sensitivity: f32,
     ) -> Self {
         let mut samples_per_frame = 480 * channels as usize;
         let resampler = if sample_rate != INTERNAL_SAMPLE_RATE {
@@ -321,6 +346,7 @@ impl WakewordDetector {
         } else {
             None
         };
+        #[cfg(feature = "vad")]
         let vad_detector = if vad_mode.is_some() {
             Some(webrtc_vad::Vad::new_with_rate_and_mode(
                 webrtc_vad::SampleRate::Rate48kHz,
@@ -352,12 +378,19 @@ impl WakewordDetector {
             resampler,
             eager_mode,
             single_thread,
+            #[cfg(feature = "vad")]
             voice_detections: Vec::with_capacity(100),
+            #[cfg(feature = "vad")]
             audio_cache: Vec::with_capacity(100),
+            #[cfg(feature = "vad")]
             vad_enabled: false,
+            #[cfg(feature = "vad")]
             vad_detector,
+            #[cfg(feature = "vad")]
             vad_delay,
+            #[cfg(feature = "vad")]
             vad_sensitivity,
+            #[cfg(feature = "vad")]
             voice_detection_time: SystemTime::UNIX_EPOCH,
         };
         detector
@@ -553,7 +586,10 @@ impl WakewordDetector {
         } else {
             float_buffer
         };
-        self.apply_vad_detection(resampled_audio)
+        #[cfg(not(feature = "vad"))]
+        return self.process_encoded_audio(&resampled_audio, true);
+        #[cfg(feature = "vad")]
+        return self.apply_vad_detection(resampled_audio);
     }
     /// Returns the desired chunk size.
     pub fn get_samples_per_frame(&self) -> usize {
@@ -632,8 +668,12 @@ impl WakewordDetector {
                 .map(|n| *n as f32)
                 .collect::<Vec<_>>()
         };
-        self.apply_vad_detection(resampled_audio)
+        #[cfg(not(feature = "vad"))]
+        return self.process_encoded_audio(&resampled_audio, true);
+        #[cfg(feature = "vad")]
+        return self.apply_vad_detection(resampled_audio);
     }
+    #[cfg(feature = "vad")]
     fn apply_vad_detection(&mut self, resampled_audio: Vec<f32>) -> Option<DetectedWakeword> {
         if self.result_state.is_none()
             && self.vad_detector.is_some()
@@ -734,11 +774,11 @@ impl WakewordDetector {
                     .chunks_exact(channels as usize)
                     .map(|chunk| chunk[0].as_ref().unwrap())
                     .map(|s| {
-                            if bits_per_sample < 16 {
-                                (*s << (16 - bits_per_sample)) as f32
-                            } else {
-                                (*s >> (bits_per_sample - 16)) as f32
-                            }
+                        if bits_per_sample < 16 {
+                            (*s << (16 - bits_per_sample)) as f32
+                        } else {
+                            (*s >> (bits_per_sample - 16)) as f32
+                        }
                     })
                     .collect::<Vec<_>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
@@ -753,8 +793,7 @@ impl WakewordDetector {
                     .collect::<Vec<_>>()
                     .chunks_exact(channels as usize)
                     .map(|chunk| chunk[0].as_ref().unwrap())
-                    
-                    .map(|s|  *s * 32767.0)
+                    .map(|s| *s * 32767.0)
                     .collect::<Vec<_>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
                     resample_audio(sample_rate as usize, &samples)
@@ -787,11 +826,14 @@ impl WakewordDetector {
         let result_option = self.get_best_wakeword(features);
         match result_option {
             Some(result) => {
-                if self.vad_enabled {
-                    self.vad_enabled = false;
-                    debug!("switching to feature detector");
+                #[cfg(feature = "vad")]
+                {
+                    if self.vad_enabled {
+                        self.vad_enabled = false;
+                        debug!("switching to feature detector");
+                    }
+                    self.voice_detection_time = SystemTime::now();
                 }
-                self.voice_detection_time = SystemTime::now();
                 if self.eager_mode {
                     if result.index != 0 {
                         debug!("Sorting '{}' templates", result.wakeword);
@@ -848,7 +890,9 @@ impl WakewordDetector {
         }
     }
     fn reset(&mut self) {
-        self.voice_detection_time = SystemTime::now();
+        #[cfg(feature = "vad")] {
+            self.voice_detection_time = SystemTime::now();
+        }
         self.frames.clear();
         self.buffering = true;
         self.result_state = None;
