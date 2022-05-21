@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "rustpotter"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "hound",
  "log",

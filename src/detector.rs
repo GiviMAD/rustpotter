@@ -123,7 +123,7 @@ impl WakewordDetectorBuilder {
     }
     /// Configures the detector expected sample rate for the audio chunks to process.
     ///
-    /// Defaults to 16000
+    /// Defaults to 48000
     pub fn set_sample_rate(&mut self, value: usize) -> &mut Self {
         self.sample_rate = Some(value);
         self
@@ -507,7 +507,7 @@ impl WakewordDetector {
             &audio_chunk
                 .into_iter()
                 .map(|i| *i as i32)
-                .collect::<Vec<_>>(),
+                .collect::<Vec<i32>>(),
         )
     }
     /// Process i16 audio chunks.
@@ -526,7 +526,7 @@ impl WakewordDetector {
             &audio_chunk
                 .into_iter()
                 .map(|i| *i as i32)
-                .collect::<Vec<_>>(),
+                .collect::<Vec<i32>>(),
         )
     }
     /// Process i32 audio chunks.
@@ -566,13 +566,13 @@ impl WakewordDetector {
             audio_chunk
                 .chunks_exact(self.channels as usize)
                 .map(|chunk| chunk[0])
-                .map(|s| s * 32767.0)
-                .collect::<Vec<_>>()
+                .map(convert_f32_sample)
+                .collect::<Vec<f32>>()
         } else {
             audio_chunk
                 .into_iter()
-                .map(|s| s * 32767.0)
-                .collect::<Vec<_>>()
+                .map(convert_f32_sample_ref)
+                .collect::<Vec<f32>>()
         };
         let resampled_audio = if self.resampler.is_some() {
             let resampler = self.resampler.as_mut().unwrap();
@@ -642,7 +642,7 @@ impl WakewordDetector {
                             (s >> (bits_per_sample - 16)) as f32
                         }
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<f32>>()
             } else {
                 audio_chunk
                     .into_iter()
@@ -653,7 +653,7 @@ impl WakewordDetector {
                             (*s >> (bits_per_sample - 16)) as f32
                         }
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<f32>>()
             };
             let waves_in = vec![float_buffer; 1];
             let waves_out = self.resampler_out_buffer.as_mut().unwrap();
@@ -666,7 +666,7 @@ impl WakewordDetector {
             audio_chunk
                 .into_iter()
                 .map(|n| *n as f32)
-                .collect::<Vec<_>>()
+                .collect::<Vec<f32>>()
         };
         #[cfg(not(feature = "vad"))]
         return self.process_encoded_audio(&resampled_audio, true);
@@ -705,7 +705,7 @@ impl WakewordDetector {
                 debug!("voice detected; processing cache");
                 self.audio_cache
                     .drain(0..self.audio_cache.len())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<Vec<f32>>>()
                     .into_iter()
                     .for_each(|i| {
                         self.process_encoded_audio(&i, false);
@@ -736,18 +736,20 @@ impl WakewordDetector {
         self.extractor.compute_frame_features();
         let features = self.extractor.features().to_vec();
         let mut detection: Option<DetectedWakeword> = None;
-        self.frames.push(features);
-        if self.frames.len() >= self.min_frames {
-            if self.buffering {
-                self.buffering = false;
-                debug!("ready");
+        if self.wakewords.len() != 0 {
+            self.frames.push(features);
+            if self.frames.len() >= self.min_frames {
+                if self.buffering {
+                    self.buffering = false;
+                    debug!("ready");
+                }
+                if run_detection {
+                    detection = self.run_detection();
+                }
             }
-            if run_detection {
-                detection = self.run_detection();
+            if self.frames.len() >= self.max_frames {
+                self.frames.drain(0..=self.frames.len() - self.max_frames);
             }
-        }
-        if self.frames.len() >= self.max_frames {
-            self.frames.drain(0..=self.frames.len() - self.max_frames);
         }
         detection
     }
@@ -780,7 +782,7 @@ impl WakewordDetector {
                             (*s >> (bits_per_sample - 16)) as f32
                         }
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Vec<f32>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
                     resample_audio(sample_rate as usize, &samples)
                 } else {
@@ -793,8 +795,8 @@ impl WakewordDetector {
                     .collect::<Vec<_>>()
                     .chunks_exact(channels as usize)
                     .map(|chunk| chunk[0].as_ref().unwrap())
-                    .map(|s| *s * 32767.0)
-                    .collect::<Vec<_>>();
+                    .map(convert_f32_sample_ref)
+                    .collect::<Vec<f32>>();
                 if sample_rate as usize != INTERNAL_SAMPLE_RATE {
                     resample_audio(sample_rate as usize, &samples)
                 } else {
@@ -818,7 +820,7 @@ impl WakewordDetector {
                     Some(features.to_vec())
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<Vec<f32>>>();
         Ok(self.normalize_features(all_features))
     }
     fn run_detection(&mut self) -> Option<DetectedWakeword> {
@@ -890,7 +892,8 @@ impl WakewordDetector {
         }
     }
     fn reset(&mut self) {
-        #[cfg(feature = "vad")] {
+        #[cfg(feature = "vad")]
+        {
             self.voice_detection_time = SystemTime::now();
         }
         self.frames.clear();
@@ -957,7 +960,7 @@ impl WakewordDetector {
                             name.clone(),
                         )
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<DetectedWakeword>>()
             } else {
                 self.wakewords
                     .iter()
@@ -997,7 +1000,7 @@ impl WakewordDetector {
                     })
                     .map(JoinHandle::join)
                     .filter_map(Result::unwrap)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<DetectedWakeword>>()
             };
         if detections.is_empty() {
             None
@@ -1080,6 +1083,19 @@ fn run_wakeword_detection(
         }
     }
     detection
+}
+fn convert_f32_sample_ref(value: &f32) -> f32 {
+    convert_f32_sample(*value)
+}
+fn convert_f32_sample(value: f32) -> f32 {
+    let ranged_value = if value < -1. {
+        -1.
+    } else if value > 1. {
+        1.
+    } else {
+        value
+    };
+    ranged_value * 32767.5 - 0.5
 }
 /// Represents a successful wakeword detection.
 pub struct DetectedWakeword {
