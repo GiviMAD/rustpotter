@@ -18,6 +18,12 @@ This project allows to detect specific wake words on a live audio stream, to do 
 
 The features can be loaded from a previous generated model file or extracted from the samples before start the live streaming.
 
+## Audio Format
+
+This project uses wav, it works internally with the spec 48000hz 16 bit 1 channel int, but allows to configure the detector to work with other specs.
+
+The detector configuration is ignored when adding a keyword with samples (`add_wakeword` method) as the wav spec is read from each file header (so raw samples are not allowed).
+
 ## Related projects
 
 * [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use rustpotter on the command line (the only that exposes model generation at the moment).
