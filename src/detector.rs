@@ -34,18 +34,19 @@ pub struct WakewordDetectorBuilder {
     sample_format: Option<SampleFormat>,
     bits_per_sample: Option<u16>,
     channels: Option<u16>,
-    #[cfg(feature = "vad")]
-    vad_mode: Option<VadMode>,
-    #[cfg(feature = "vad")]
-    vad_sensitivity: Option<f32>,
-    #[cfg(feature = "vad")]
-    vad_delay: Option<u16>,
     eager_mode: bool,
     single_thread: bool,
     averaged_threshold: Option<f32>,
     threshold: Option<f32>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
+    max_silence_frames: Option<u16>,
+    #[cfg(feature = "vad")]
+    vad_mode: Option<VadMode>,
+    #[cfg(feature = "vad")]
+    vad_sensitivity: Option<f32>,
+    #[cfg(feature = "vad")]
+    vad_delay: Option<u16>,
 }
 impl WakewordDetectorBuilder {
     pub fn new() -> Self {
@@ -58,16 +59,17 @@ impl WakewordDetectorBuilder {
             // detection options
             eager_mode: false,
             single_thread: false,
+            threshold: None,
+            averaged_threshold: None,
+            comparator_band_size: None,
+            comparator_ref: None,
+            max_silence_frames: None,
             #[cfg(feature = "vad")]
             vad_mode: None,
             #[cfg(feature = "vad")]
             vad_delay: None,
             #[cfg(feature = "vad")]
             vad_sensitivity: None,
-            threshold: None,
-            averaged_threshold: None,
-            comparator_band_size: None,
-            comparator_ref: None,
         }
     }
     /// construct the wakeword detector
@@ -83,6 +85,7 @@ impl WakewordDetectorBuilder {
             self.get_averaged_threshold(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
+            self.get_max_silence_frames(),
             #[cfg(feature = "vad")]
             self.get_vad_mode(),
             #[cfg(feature = "vad")]
@@ -155,6 +158,14 @@ impl WakewordDetectorBuilder {
     /// Defaults to 0.22
     pub fn set_comparator_ref(&mut self, value: f32) -> &mut Self {
         self.comparator_ref = Some(value);
+        self
+    }
+    /// Configures consecutive number of samples containing only silence for 
+    /// skip the comparison against the wakewords to avoid useless cpu consumption.
+    ///
+    /// Defaults to 3, 0 for disabled.
+    pub fn set_max_silence_frames(&mut self, value: u16) -> &mut Self {
+        self.max_silence_frames = Some(value);
         self
     }
     /// Enables eager mode.
@@ -230,6 +241,9 @@ impl WakewordDetectorBuilder {
     }
     fn get_comparator_ref(&self) -> f32 {
         self.comparator_ref.unwrap_or(0.22)
+    }
+    fn get_max_silence_frames(&self) -> u16 {
+        self.max_silence_frames.unwrap_or(1)
     }
     fn get_eager_mode(&self) -> bool {
         self.eager_mode
@@ -307,6 +321,8 @@ pub struct WakewordDetector {
     result_state: Option<DetectedWakeword>,
     extractor: DenoiseFeatures,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
+    silence_frame_counter: u16,
+    max_silence_frames: u16,
     #[cfg(feature = "vad")]
     vad_enabled: bool,
     #[cfg(feature = "vad")]
@@ -333,6 +349,7 @@ impl WakewordDetector {
         averaged_threshold: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
+        max_silence_frames: u16,
         #[cfg(feature = "vad")] vad_mode: Option<VadMode>,
         #[cfg(feature = "vad")] vad_delay: u16,
         #[cfg(feature = "vad")] vad_sensitivity: f32,
@@ -364,6 +381,8 @@ impl WakewordDetector {
             bits_per_sample,
             samples_per_frame,
             channels,
+            silence_frame_counter: 0,
+            max_silence_frames,
             frames: Vec::new(),
             wakewords: HashMap::new(),
             buffering: true,
@@ -775,6 +794,7 @@ impl WakewordDetector {
                 self.voice_detection_time = SystemTime::now();
                 debug!("switching to feature detector");
                 self.vad_enabled = false;
+                self.silence_frame_counter = 0;
                 self.process_encoded_audio(&resampled_audio, true)
             } else {
                 if self.audio_cache.len() >= self.max_frames {
@@ -794,7 +814,18 @@ impl WakewordDetector {
         run_detection: bool,
     ) -> Option<DetectedWakeword> {
         self.extractor.shift_and_filter_input(&audio_chunk);
-        self.extractor.compute_frame_features();
+        let silence = self.extractor.compute_frame_features();
+        let silence_detected = if silence && self.max_silence_frames != 0 {
+            if self.max_silence_frames > self.silence_frame_counter {
+                self.silence_frame_counter += 1;
+                self.max_silence_frames == self.silence_frame_counter
+            } else {
+                true
+            }
+        } else {
+            self.silence_frame_counter = 0;
+            false
+        };
         let features = self.extractor.features().to_vec();
         let mut detection: Option<DetectedWakeword> = None;
         if self.wakewords.len() != 0 {
@@ -804,7 +835,7 @@ impl WakewordDetector {
                     self.buffering = false;
                     debug!("ready");
                 }
-                if run_detection {
+                if run_detection && !silence_detected {
                     detection = self.run_detection();
                 }
             }
@@ -995,8 +1026,6 @@ impl WakewordDetector {
                     .iter()
                     .filter_map(|(name, wakeword)| {
                         if !wakeword.is_enabled()
-                            || self.result_state.is_some()
-                                && self.result_state.as_ref().unwrap().wakeword != *name
                         {
                             return None;
                         }
