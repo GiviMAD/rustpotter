@@ -298,6 +298,7 @@ pub struct WakewordDetector {
     vad_sensitivity: f32,
     // state
     samples_per_frame: usize,
+    bytes_per_frame: usize,
     buffering: bool,
     min_frames: usize,
     max_frames: usize,
@@ -359,6 +360,7 @@ impl WakewordDetector {
             threshold,
             averaged_threshold,
             sample_format,
+            bytes_per_frame: samples_per_frame * (bits_per_sample / 8) as usize,
             bits_per_sample,
             samples_per_frame,
             channels,
@@ -475,6 +477,61 @@ impl WakewordDetector {
             };
         }
         self.update_detection_frame_size(min_frames, max_frames);
+    }
+    /// Process bytes buffer.
+    ///
+    /// Asserts that the buffer length should match the return
+    /// of the get_bytes_per_frame method.
+    ///
+    /// Assumes sample rate match the configured for the detector.
+    ///
+    /// Assumes little endian order on the buffer.
+    ///
+    /// Asserts that detector bits_per_sample is 8, 16, 24 or 32 (float format only allows 32).
+    ///
+    pub fn process_buffer(&mut self, audio_buffer: &[u8]) -> Option<DetectedWakeword> {
+        assert!(audio_buffer.len() == self.get_bytes_per_frame());
+        match self.sample_format {
+            SampleFormat::Int => {
+                let audio_chunk =  audio_buffer
+                .chunks_exact((self.bits_per_sample/8) as usize)
+                .map(|bytes| {
+                    match self.bits_per_sample {
+                        8 => {
+                            i8::from_le_bytes([bytes[0]]) as i32
+                        }
+                        16 => {
+                            i16::from_le_bytes([bytes[0], bytes[1]]) as i32
+                        }
+                        24 => {
+                            i32::from_le_bytes([0, bytes[0], bytes[1], bytes[2]])
+                        }
+                        32 => {
+                            i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                        }
+                        _default => {
+                            panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                        }
+                    }}).collect::<Vec<i32>>();
+
+                self.process_int(&audio_chunk)
+            }
+            SampleFormat::Float => {
+                let audio_chunk = audio_buffer
+                    .chunks_exact((self.bits_per_sample/8) as usize)
+                    .map(|bytes| {
+                        match self.bits_per_sample {
+                            32 => {
+                                f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                            }
+                            _default => {
+                                panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
+                            }
+                        }
+                    }).collect::<Vec<f32>>();
+                self.process_f32(&audio_chunk)
+            }
+        }
     }
     /// Process i32 audio chunks.
     ///
@@ -594,6 +651,10 @@ impl WakewordDetector {
     /// Returns the desired chunk size.
     pub fn get_samples_per_frame(&self) -> usize {
         self.samples_per_frame
+    }
+    /// Returns size in bytes for the desired chunk
+    pub fn get_bytes_per_frame(&self) -> usize {
+        self.bytes_per_frame
     }
     fn add_wakeword_from_model(
         &mut self,
