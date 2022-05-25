@@ -1,6 +1,6 @@
 use crate::comparator::FeatureComparator;
 use crate::nnnoiseless_fork::{self, DenoiseFeatures};
-use crate::wakeword::{Wakeword, WakewordModel};
+use crate::wakeword::{Wakeword, WakewordModel, WakewordTemplate, WAKEWORD_MODEL_VERSION};
 use hound::WavReader;
 use log::{debug, warn};
 use rubato::{FftFixedInOut, Resampler};
@@ -160,7 +160,7 @@ impl WakewordDetectorBuilder {
         self.comparator_ref = Some(value);
         self
     }
-    /// Configures consecutive number of samples containing only silence for 
+    /// Configures consecutive number of samples containing only silence for
     /// skip the comparison against the wakewords to avoid useless cpu consumption.
     ///
     /// Defaults to 3, 0 for disabled.
@@ -422,7 +422,8 @@ impl WakewordDetector {
         bytes: Vec<u8>,
         enabled: bool,
     ) -> Result<(), String> {
-        let model: WakewordModel = load_from_mem(&bytes, 0).or(Err("Unable to load model data"))?;
+        let model: WakewordModel =
+            load_from_mem(&bytes, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
         self.add_wakeword_from_model(model, enabled)
     }
     /// Loads a wakeword from its model path.
@@ -431,18 +432,21 @@ impl WakewordDetector {
         path: String,
         enabled: bool,
     ) -> Result<(), String> {
-        let model: WakewordModel = load_file(path, 0).or(Err("Unable to load model data"))?;
+        let model: WakewordModel =
+            load_file(path, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
         self.add_wakeword_from_model(model, enabled)
     }
     /// Generates the model file bytes from a loaded a wakeword.
     pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
         let model = self.get_wakeword_model(&name)?;
-        save_to_mem(0, &model).or(Err(String::from("Unable to generate model bytes")))
+        save_to_mem(WAKEWORD_MODEL_VERSION, &model)
+            .or(Err(String::from("Unable to generate model bytes")))
     }
     /// Generates a model file from a loaded a wakeword on the desired path.
     pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
         let model = self.get_wakeword_model(&name)?;
-        save_file(path, 0, &model).or(Err(String::from("Unable to generate file")))
+        save_file(path, WAKEWORD_MODEL_VERSION, &model)
+            .or(Err(String::from("Unable to generate file")))
     }
     /// Adds a wakeword using wav samples.
     ///
@@ -460,7 +464,7 @@ impl WakewordDetector {
     /// ```
     pub fn add_wakeword(
         &mut self,
-        name: String,
+        name: &str,
         enabled: bool,
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
@@ -470,19 +474,19 @@ impl WakewordDetector {
             "Adding wakeword \"{}\" (sample paths: {:?})",
             name, sample_paths
         );
-        if self.wakewords.get_mut(&name).is_none() {
+        if self.wakewords.get_mut(name).is_none() {
             self.wakewords.insert(
-                name.clone(),
+                String::from(name),
                 Wakeword::new(enabled, averaged_threshold, threshold),
             );
         }
         let mut min_frames: usize = 0;
         let mut max_frames: usize = 0;
         for template in sample_paths {
-            match self.extract_features_from_file(template) {
+            match self.extract_features_from_file(&template) {
                 Ok(features) => {
-                    let word = self.wakewords.get_mut(&name).unwrap();
-                    word.add_features(features.to_vec());
+                    let word = self.wakewords.get_mut(name).unwrap();
+                    word.add_features(template, features.to_vec());
                     min_frames = if min_frames == 0 {
                         word.get_min_frames()
                     } else {
@@ -496,6 +500,32 @@ impl WakewordDetector {
             };
         }
         self.update_detection_frame_size(min_frames, max_frames);
+    }
+    /// Removes a wakeword by name.
+    pub fn remove_wakeword(&mut self, name: &str) {
+        self.wakewords.remove(name);
+    }
+    /// Sets detector threshold.
+    pub fn set_threshold(&mut self, threshold: f32) {
+        self.threshold = threshold;
+    }
+    /// Sets detector averaged threshold.
+    pub fn set_averaged_threshold(&mut self, averaged_threshold: f32) {
+        self.averaged_threshold = averaged_threshold;
+    }
+    /// Sets wakeword threshold.
+    pub fn set_wakeword_threshold(&mut self, name: &str, threshold: f32) {
+        let wakeword = self.wakewords.get_mut(name);
+        if wakeword.is_some() {
+            wakeword.unwrap().set_threshold(threshold);
+        }
+    }
+    /// Sets wakeword averaged threshold.
+    pub fn set_wakeword_averaged_threshold(&mut self, name: &str, averaged_threshold: f32) {
+        let wakeword = self.wakewords.get_mut(name);
+        if wakeword.is_some() {
+            wakeword.unwrap().set_averaged_threshold(averaged_threshold);
+        }
     }
     /// Process bytes buffer.
     ///
@@ -680,7 +710,7 @@ impl WakewordDetector {
         model: WakewordModel,
         enabled: bool,
     ) -> Result<(), String> {
-        let wakeword_name = model.name.clone();
+        let wakeword_name = String::from(model.get_name());
         let wakeword = Wakeword::from_model(model, enabled);
         self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
         self.wakewords.insert(wakeword_name, wakeword);
@@ -690,18 +720,13 @@ impl WakewordDetector {
         self.min_frames = std::cmp::min(self.min_frames, min_frames);
         self.max_frames = std::cmp::max(self.max_frames, max_frames);
     }
-    fn get_wakeword_model(&self, name: &String) -> Result<WakewordModel, String> {
-        let wakeword = self.wakewords.get(name);
-        if wakeword.is_none() {
-            Err(String::from("Missing wakeword"))
+    fn get_wakeword_model(&self, name: &str) -> Result<WakewordModel, &str> {
+        let wakeword_option = self.wakewords.get(name);
+        if wakeword_option.is_none() {
+            Err("Missing wakeword")
         } else {
-            let features = wakeword.unwrap().get_templates();
-            let model = WakewordModel::new(
-                name.clone(),
-                features,
-                wakeword.unwrap().get_averaged_threshold(),
-                wakeword.unwrap().get_threshold(),
-            );
+            let wakeword = wakeword_option.unwrap();
+            let model = WakewordModel::from_wakeword(name, wakeword);
             Ok(model)
         }
     }
@@ -845,8 +870,8 @@ impl WakewordDetector {
         }
         detection
     }
-    fn extract_features_from_file(&mut self, file_path: String) -> Result<Vec<Vec<f32>>, String> {
-        let path = Path::new(&file_path);
+    fn extract_features_from_file(&mut self, file_path: &str) -> Result<Vec<Vec<f32>>, String> {
+        let path = Path::new(file_path);
         if !path.exists() || !path.is_file() {
             warn!("File \"{}\" not found!", file_path);
             return Err("Can not read file".to_string());
@@ -1025,8 +1050,7 @@ impl WakewordDetector {
                 self.wakewords
                     .iter()
                     .filter_map(|(name, wakeword)| {
-                        if !wakeword.is_enabled()
-                        {
+                        if !wakeword.is_enabled() {
                             return None;
                         }
                         let templates = wakeword.get_templates();
@@ -1119,7 +1143,7 @@ fn resample_audio(input_sample_rate: usize, audio_pcm_signed: &[f32]) -> Vec<f32
 
 fn run_wakeword_detection(
     comparator: &FeatureComparator,
-    templates: &[Vec<Vec<f32>>],
+    templates: &[WakewordTemplate],
     averaged_template: Option<Vec<Vec<f32>>>,
     eager_mode: bool,
     features: &[Vec<f32>],
@@ -1148,14 +1172,23 @@ fn run_wakeword_detection(
     let mut detection: Option<DetectedWakeword> = None;
     for (index, template) in templates.iter().enumerate() {
         let mut frames = features.to_vec();
-        if frames.len() > template.len() {
-            frames.drain(template.len()..frames.len());
+        if frames.len() > template.get_template().len() {
+            frames.drain(template.get_template().len()..frames.len());
         }
         let score = comparator.compare(
-            &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+            &template
+                .get_template()
+                .iter()
+                .map(|item| &item[..])
+                .collect::<Vec<_>>(),
             &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
         );
-        debug!("wakeword '{}' scored {}", wakeword_name, score);
+        debug!(
+            "wakeword '{}' scored {} - template '{}'",
+            wakeword_name,
+            score,
+            template.get_name()
+        );
         if score < threshold {
             continue;
         }

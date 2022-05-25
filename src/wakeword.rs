@@ -1,40 +1,78 @@
 use crate::comparator;
 use crate::dtw;
-pub struct Wakeword {
-    averaged_template: Option<Vec<Vec<f32>>>,
-    templates: Vec<Vec<Vec<f32>>>,
-    enabled: bool,
-    threshold: Option<f32>,
-    averaged_threshold: Option<f32>,
-}
 
+pub const WAKEWORD_MODEL_VERSION: u32 = 0;
 #[derive(Savefile)]
 pub struct WakewordModel {
-    pub name: String,
+    name: String,
     threshold: Option<f32>,
     averaged_threshold: Option<f32>,
-    templates: Vec<Vec<Vec<f32>>>,
+    averaged_template: Option<Vec<Vec<f32>>>,
+    templates: Vec<(String, Vec<Vec<f32>>)>,
 }
 impl WakewordModel {
     pub fn new(
-        name: String,
-        templates: Vec<Vec<Vec<f32>>>,
+        name: &str,
+        averaged_template: Option<Vec<Vec<f32>>>,
+        templates: Vec<WakewordTemplate>,
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
     ) -> Self {
         WakewordModel {
-            name,
-            templates,
+            name: String::from(name),
+            templates: templates
+                .into_iter()
+                .map(|item| (item.name, item.template))
+                .collect(),
+            averaged_template,
             averaged_threshold,
             threshold,
         }
     }
+    pub fn from_wakeword(name: &str, wakeword: &Wakeword) -> Self {
+        WakewordModel::new(
+            name,
+            wakeword.get_averaged_template(),
+            wakeword.get_templates(),
+            wakeword.get_averaged_threshold(),
+            wakeword.get_threshold(),
+        )
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+}
+#[derive(Clone)]
+pub struct WakewordTemplate {
+    name: String,
+    template: Vec<Vec<f32>>,
+}
+
+impl WakewordTemplate {
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+    pub fn get_template(&self) -> &[Vec<f32>] {
+        &self.template
+    }
+}
+pub struct Wakeword {
+    averaged_template: Option<Vec<Vec<f32>>>,
+    templates: Vec<WakewordTemplate>,
+    enabled: bool,
+    threshold: Option<f32>,
+    averaged_threshold: Option<f32>,
 }
 impl Wakeword {
     pub fn from_model(model: WakewordModel, enabled: bool) -> Wakeword {
         Wakeword {
-            averaged_template: average_templates(&mut model.templates.to_vec()),
-            templates: model.templates.to_vec(),
+            averaged_template: model.averaged_template,
+            templates: model
+                .templates
+                .into_iter()
+                .map(|(name, template)| WakewordTemplate { name, template })
+                .collect(),
             enabled: enabled,
             threshold: model.threshold,
             averaged_threshold: model.averaged_threshold,
@@ -51,21 +89,27 @@ impl Wakeword {
             } else {
                 None
             },
-            templates: vec![],
+            templates: Vec::new(),
             averaged_template: None,
         }
+    }
+    pub fn set_threshold(&mut self, threshold: f32) {
+        self.threshold = Some(threshold);
+    }
+    pub fn set_averaged_threshold(&mut self, averaged_threshold: f32) {
+        self.averaged_threshold = Some(averaged_threshold);
     }
     pub fn get_min_frames(&self) -> usize {
         self.get_templates()
             .iter()
-            .map(|item| item.len())
+            .map(|item| item.template.len())
             .min()
             .expect("Unable to get min frames for wakeword")
     }
     pub fn get_max_frames(&self) -> usize {
         self.get_templates()
             .iter()
-            .map(|item| item.len())
+            .map(|item| item.template.len())
             .max()
             .expect("Unable to get min frames for wakeword")
     }
@@ -85,11 +129,11 @@ impl Wakeword {
             None
         }
     }
-    pub fn get_templates(&self) -> Vec<Vec<Vec<f32>>> {
-        self.templates.to_vec()
+    pub fn get_templates(&self) -> Vec<WakewordTemplate> {
+        self.templates.clone()
     }
-    pub fn add_features(&mut self, features: Vec<Vec<f32>>) {
-        self.templates.push(features);
+    pub fn add_features(&mut self, name: String, template: Vec<Vec<f32>>) {
+        self.templates.push(WakewordTemplate { name, template });
         self.averaged_template = average_templates(&mut self.templates);
     }
     pub fn prioritize_template(&mut self, index: usize) {
@@ -97,14 +141,15 @@ impl Wakeword {
         self.templates.swap(index, 0);
     }
 }
-fn average_templates(templates: &mut [Vec<Vec<f32>>]) -> Option<Vec<Vec<f32>>> {
+fn average_templates(templates: &[WakewordTemplate]) -> Option<Vec<Vec<f32>>> {
     if templates.len() <= 1 {
         return None;
     }
-    templates.sort_by(|a, b| a.len().partial_cmp(&b.len()).unwrap());
-    let mut origin = templates[0].to_vec();
+    let mut template_vec = templates.to_vec();
+    template_vec.sort_by(|a, b| a.template.len().partial_cmp(&b.template.len()).unwrap());
+    let mut origin = template_vec[0].template.to_vec();
     for i in 1..templates.len() {
-        let frames = templates[i].to_vec();
+        let frames = template_vec[i].template.to_vec();
 
         let mut dtw = dtw::new(comparator::calculate_distance);
 
