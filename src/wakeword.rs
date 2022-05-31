@@ -73,7 +73,7 @@ impl Wakeword {
                 .into_iter()
                 .map(|(name, template)| WakewordTemplate { name, template })
                 .collect(),
-            enabled: enabled,
+            enabled,
             threshold: model.threshold,
             averaged_threshold: model.averaged_threshold,
         }
@@ -134,7 +134,7 @@ impl Wakeword {
     }
     pub fn add_templates_features(&mut self, templates: Vec<(String, Vec<Vec<f32>>)>) {
         templates.into_iter().for_each(|(name, template)| self.templates.push(WakewordTemplate { name, template }));
-        self.averaged_template = average_templates(&mut self.templates);
+        self.averaged_template = average_templates(&self.templates);
     }
     pub fn prioritize_template(&mut self, index: usize) {
         self.templates.rotate_right(1);
@@ -148,8 +148,8 @@ fn average_templates(templates: &[WakewordTemplate]) -> Option<Vec<Vec<f32>>> {
     let mut template_vec = templates.to_vec();
     template_vec.sort_by(|a, b| a.template.len().partial_cmp(&b.template.len()).unwrap());
     let mut origin = template_vec[0].template.to_vec();
-    for i in 1..templates.len() {
-        let frames = template_vec[i].template.to_vec();
+    for (i, template_vec) in templates.iter().enumerate().skip(1) {
+        let frames = template_vec.template.to_vec();
 
         let mut dtw = dtw::new(comparator::calculate_distance);
 

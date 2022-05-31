@@ -1,0 +1,65 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'rustpotter'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=rustpotter"
+                ],
+                "filter": {
+                    "name": "rustpotter",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'detector'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=detector",
+                    "--package=rustpotter"
+                ],
+                "filter": {
+                    "name": "detector",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug benchmark 'benches'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bench=benches",
+                    "--package=rustpotter"
+                ],
+                "filter": {
+                    "name": "benches",
+                    "kind": "bench"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

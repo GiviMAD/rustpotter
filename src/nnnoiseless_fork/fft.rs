@@ -89,14 +89,14 @@ impl RealFft {
 
         let fftlen = self.length / 2;
 
-        let mut buf_in = unsafe {
+        let buf_in = unsafe {
             let ptr = input.as_mut_ptr() as *mut Complex<f32>;
             let len = input.len();
             std::slice::from_raw_parts_mut(ptr, len / 2)
         };
 
         self.forward.process_outofplace_with_scratch(
-            &mut buf_in,
+            buf_in,
             &mut scratch[0..fftlen],
             &mut fft_scratch[..],
         );

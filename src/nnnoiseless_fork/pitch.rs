@@ -81,9 +81,9 @@ impl PitchFinder {
         }
 
         // Use brute-force for the 4x downsampled data.
-        pitch_xcorr(&x_lp4, &y_lp4, &mut xcorr[0..(max_pitch / 4)]);
+        pitch_xcorr(x_lp4, y_lp4, &mut xcorr[0..(max_pitch / 4)]);
         let (best_pitch, second_best_pitch) =
-            find_best_pitch(&xcorr[0..(max_pitch / 4)], &y_lp4, len / 4);
+            find_best_pitch(&xcorr[0..(max_pitch / 4)], y_lp4, len / 4);
 
         // Do a finer search on the 2x downsampled data. We still do pitch_search by brute force,
         // but this time we only compute a few candidate values of the cross-correlation.
@@ -94,9 +94,9 @@ impl PitchFinder {
             {
                 continue;
             }
-            xcorr[i] = inner_prod(&x_lp[..], &y[i..], len / 2).max(-1.0);
+            xcorr[i] = inner_prod(x_lp, &y[i..], len / 2).max(-1.0);
         }
-        let (best_pitch, _) = find_best_pitch(&xcorr, &y, len / 2);
+        let (best_pitch, _) = find_best_pitch(xcorr, y, len / 2);
 
         // Use pseudo-interpolation to get the final pitch for the original signal.
         let offset: isize = if best_pitch > 0 && best_pitch < (max_pitch / 2) - 1 {

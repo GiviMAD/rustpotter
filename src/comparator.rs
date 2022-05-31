@@ -10,10 +10,10 @@ impl FeatureComparator {
         let mut dtw = dtw::new(calculate_distance);
         let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size);
         let normalized_cost = cost / (a.len() + b.len()) as f32;
-        return self.compute_probability(normalized_cost);
+        self.compute_probability(normalized_cost)
     }
     fn compute_probability(&self, cost: f32) -> f32 {
-        return 1. / (1. + ((cost - self.reference) / self.reference).exp());
+        1. / (1. + ((cost - self.reference) / self.reference).exp())
     }
     pub fn new(band_size: usize, reference: f32) -> Self {
         FeatureComparator {
@@ -42,9 +42,9 @@ pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {
         dimension += 1;
     }
     let magnitude = f32::sqrt((dot_a * dot_b) as f32) as f32;
-    return if magnitude == 0. {
+    if magnitude == 0. {
         0.
     } else {
         dot_ab / magnitude
-    };
+    }
 }

@@ -2,14 +2,14 @@ use simple_matrix::Matrix;
 use std::cmp;
 use std::iter;
 
-pub struct DTW<T: Copy> {
+pub struct Dtw<T: Copy> {
     state_m: usize,
     state_n: usize,
     distance_fn: fn(T, T) -> f32,
     state_similarity: Option<f32>,
     distance_cost_matrix: Option<Matrix<f32>>,
 }
-impl<T: Copy> DTW<T> {
+impl<T: Copy> Dtw<T> {
     pub fn compute_optimal_path(&mut self, first_sequence: &[T], second_sequence: &[T]) -> f32 {
         self.state_m = first_sequence.len();
         self.state_n = second_sequence.len();
@@ -20,26 +20,26 @@ impl<T: Copy> DTW<T> {
             0,
             (self.distance_fn)(first_sequence[0], second_sequence[0]),
         );
-        for row_index in 1..self.state_m {
-            let cost = (self.distance_fn)(first_sequence[row_index], second_sequence[0]);
+        for (row_index, first_sequence_item) in first_sequence.iter().enumerate().take(self.state_m).skip(1) {
+            let cost = (self.distance_fn)(*first_sequence_item, second_sequence[0]);
             distance_cost_matrix.set(
                 row_index,
                 0,
                 cost + distance_cost_matrix.get(row_index - 1, 0).unwrap(),
             );
         }
-        for column_index in 1..self.state_n {
-            let cost = (self.distance_fn)(first_sequence[0], second_sequence[column_index]);
+        for (column_index, second_sequence_item) in second_sequence.iter().enumerate().take(self.state_n).skip(1) {
+            let cost = (self.distance_fn)(first_sequence[0], *second_sequence_item);
             distance_cost_matrix.set(
                 0,
                 column_index,
                 cost + distance_cost_matrix.get(0, column_index - 1).unwrap(),
             );
         }
-        for row_index in 1..self.state_m {
-            for column_index in 1..self.state_n {
+        for (row_index, first_sequence_item) in first_sequence.iter().enumerate().take(self.state_m).skip(1) {
+            for (column_index, second_sequence_item) in second_sequence.iter().enumerate().take(self.state_n).skip(1) {
                 let cost =
-                    (self.distance_fn)(first_sequence[row_index], second_sequence[column_index]);
+                    (self.distance_fn)(*first_sequence_item, *second_sequence_item);
                 let insertion = distance_cost_matrix
                     .get(row_index - 1, column_index)
                     .unwrap();
@@ -55,10 +55,9 @@ impl<T: Copy> DTW<T> {
                 distance_cost_matrix.set(row_index, column_index, cost + min_value);
             }
         }
-        let similarity = distance_cost_matrix
+        let similarity = *distance_cost_matrix
             .get(self.state_m - 1, self.state_n - 1)
-            .unwrap()
-            .clone();
+            .unwrap();
         self.distance_cost_matrix = Option::Some(distance_cost_matrix);
         self.state_similarity = Option::Some(similarity);
         similarity
@@ -116,18 +115,15 @@ impl<T: Copy> DTW<T> {
                 );
             }
         }
-        let similarity = final_distance_cost_matrix
+        let similarity = *final_distance_cost_matrix
             .get(self.state_m - 1, self.state_n - 1)
-            .unwrap()
-            .clone();
+            .unwrap();
         self.distance_cost_matrix = Option::Some(final_distance_cost_matrix);
         self.state_similarity = Option::Some(similarity);
         similarity
     }
     pub fn retrieve_optimal_path(&self) -> Option<Vec<[usize; 2]>> {
-        if self.distance_cost_matrix.is_none() {
-            return None;
-        }
+        self.distance_cost_matrix.as_ref()?;
         let distance_cost_matrix = self.distance_cost_matrix.as_ref().unwrap();
         let mut row_index = self.state_m - 1;
         let mut column_index = self.state_n - 1;
@@ -173,8 +169,8 @@ fn abs_diff(a: usize, b: usize) -> usize {
         b - a
     }
 }
-pub fn new<T: Copy>(distance_fn: fn(T, T) -> f32) -> DTW<T> {
-    DTW {
+pub fn new<T: Copy>(distance_fn: fn(T, T) -> f32) -> Dtw<T> {
+    Dtw {
         state_m: 0,
         state_n: 0,
         distance_fn,
