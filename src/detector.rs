@@ -480,30 +480,58 @@ impl WakewordDetector {
                 Wakeword::new(enabled, averaged_threshold, threshold),
             );
         }
-        let mut min_frames: usize = 0;
-        let mut max_frames: usize = 0;
-        for template in sample_paths {
-            match self.extract_features_from_file(&template) {
-                Ok(features) => {
-                    let word = self.wakewords.get_mut(name).unwrap();
-                    word.add_features(template, features.to_vec());
-                    min_frames = if min_frames == 0 {
-                        word.get_min_frames()
-                    } else {
-                        std::cmp::min(min_frames, features.len())
-                    };
-                    max_frames = std::cmp::min(max_frames, features.len());
-                }
+        let samples_features = sample_paths
+            .iter()
+            .map(|path| (path, self.extract_features_from_file(path)))
+            .filter_map(|(path, result)| match result {
+                Ok(features) => Some((path.clone(), features.to_vec())),
                 Err(msg) => {
                     warn!("{}", msg);
+                    None
                 }
-            };
-        }
-        self.update_detection_frame_size(min_frames, max_frames);
+            })
+            .collect::<Vec<_>>();
+        let word = self.wakewords.get_mut(name).unwrap();
+        word.add_templates_features(samples_features.to_vec());
+        let templates = word.get_templates().to_vec();
+        let averaged = if word.get_averaged_template().is_some() {
+            Some(word.get_averaged_template().unwrap().to_vec())
+        } else {
+            None
+        };
+        self.update_detection_frame_size();
+        templates.iter().for_each(|wakeword_template| {
+            samples_features.iter().for_each(|(_name, _template)| {
+                let score = score_frame(
+                    wakeword_template.get_template().to_vec(),
+                    _template.to_vec(),
+                    &self.comparator,
+                );
+                debug!(
+                    "Sample '{}' scored '{}' againts {}",
+                    wakeword_template.get_name(),
+                    score,
+                    _name
+                );
+            });
+            if averaged.is_some() {
+                let score = score_frame(
+                    wakeword_template.get_template().to_vec(),
+                    averaged.as_ref().unwrap().to_vec(),
+                    &self.comparator,
+                );
+                debug!(
+                    "Sample '{}' scored '{}' againts the averaged features",
+                    wakeword_template.get_name(),
+                    score
+                );
+            }
+        });
     }
     /// Removes a wakeword by name.
     pub fn remove_wakeword(&mut self, name: &str) {
         self.wakewords.remove(name);
+        self.update_detection_frame_size();
     }
     /// Sets detector threshold.
     pub fn set_threshold(&mut self, threshold: f32) {
@@ -712,13 +740,23 @@ impl WakewordDetector {
     ) -> Result<(), String> {
         let wakeword_name = String::from(model.get_name());
         let wakeword = Wakeword::from_model(model, enabled);
-        self.update_detection_frame_size(wakeword.get_min_frames(), wakeword.get_max_frames());
         self.wakewords.insert(wakeword_name, wakeword);
+        self.update_detection_frame_size();
         Ok(())
     }
-    fn update_detection_frame_size(&mut self, min_frames: usize, max_frames: usize) {
-        self.min_frames = std::cmp::min(self.min_frames, min_frames);
-        self.max_frames = std::cmp::max(self.max_frames, max_frames);
+    fn update_detection_frame_size(&mut self) {
+        let mut min_frames = 9999;
+        let mut max_frames = 0;
+        for (_, wakeword) in self.wakewords.iter() {
+            if wakeword.get_templates().len() > 0 {
+                min_frames = std::cmp::min(min_frames, wakeword.get_min_frames());
+                max_frames = std::cmp::max(max_frames, wakeword.get_max_frames());
+            }
+        }
+        debug!("{} min", min_frames);
+        debug!("{} max", max_frames);
+        self.min_frames = min_frames;
+        self.max_frames = max_frames;
     }
     fn get_wakeword_model(&self, name: &str) -> Result<WakewordModel, &str> {
         let wakeword_option = self.wakewords.get(name);
@@ -822,11 +860,13 @@ impl WakewordDetector {
                 self.silence_frame_counter = 0;
                 self.process_encoded_audio(&resampled_audio, true)
             } else {
-                if self.audio_cache.len() >= self.max_frames {
-                    self.audio_cache
-                        .drain(0..=self.audio_cache.len() - self.max_frames);
+                if self.max_frames != 0 {
+                    if self.audio_cache.len() >= self.max_frames {
+                        self.audio_cache
+                            .drain(0..=self.audio_cache.len() - self.max_frames);
+                    }
+                    self.audio_cache.push(resampled_audio);
                 }
-                self.audio_cache.push(resampled_audio);
                 None
             }
         } else {
@@ -853,7 +893,7 @@ impl WakewordDetector {
         };
         let features = self.extractor.features().to_vec();
         let mut detection: Option<DetectedWakeword> = None;
-        if self.wakewords.len() != 0 {
+        if self.wakewords.len() != 0 && self.max_frames != 0 {
             self.frames.push(features);
             if self.frames.len() >= self.min_frames {
                 if self.buffering {
@@ -1153,14 +1193,7 @@ fn run_wakeword_detection(
 ) -> Option<DetectedWakeword> {
     if averaged_threshold > 0. && averaged_template.is_some() {
         let template = averaged_template.unwrap();
-        let mut frames = features.to_vec();
-        if frames.len() > template.len() {
-            frames.drain(template.len()..frames.len());
-        }
-        let score = comparator.compare(
-            &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-            &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-        );
+        let score = score_frame(features.to_vec(), template, comparator);
         if score < averaged_threshold {
             return None;
         }
@@ -1171,17 +1204,10 @@ fn run_wakeword_detection(
     }
     let mut detection: Option<DetectedWakeword> = None;
     for (index, template) in templates.iter().enumerate() {
-        let mut frames = features.to_vec();
-        if frames.len() > template.get_template().len() {
-            frames.drain(template.get_template().len()..frames.len());
-        }
-        let score = comparator.compare(
-            &template
-                .get_template()
-                .iter()
-                .map(|item| &item[..])
-                .collect::<Vec<_>>(),
-            &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+        let score = score_frame(
+            features.to_vec(),
+            template.get_template().to_vec(),
+            comparator,
         );
         debug!(
             "wakeword '{}' scored {} - template '{}'",
@@ -1207,9 +1233,29 @@ fn run_wakeword_detection(
     }
     detection
 }
+#[inline(always)]
+fn score_frame(
+    mut frame_features: Vec<Vec<f32>>,
+    template: Vec<Vec<f32>>,
+    comparator: &FeatureComparator,
+) -> f32 {
+    if frame_features.len() > template.len() {
+        frame_features.drain(template.len()..frame_features.len());
+    }
+    let score = comparator.compare(
+        &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
+        &frame_features
+            .iter()
+            .map(|item| &item[..])
+            .collect::<Vec<_>>(),
+    );
+    score
+}
+#[inline(always)]
 fn convert_f32_sample_ref(value: &f32) -> f32 {
     convert_f32_sample(*value)
 }
+#[inline(always)]
 fn convert_f32_sample(value: f32) -> f32 {
     let ranged_value = if value < -1. {
         -1.

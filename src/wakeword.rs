@@ -132,8 +132,8 @@ impl Wakeword {
     pub fn get_templates(&self) -> Vec<WakewordTemplate> {
         self.templates.clone()
     }
-    pub fn add_features(&mut self, name: String, template: Vec<Vec<f32>>) {
-        self.templates.push(WakewordTemplate { name, template });
+    pub fn add_templates_features(&mut self, templates: Vec<(String, Vec<Vec<f32>>)>) {
+        templates.into_iter().for_each(|(name, template)| self.templates.push(WakewordTemplate { name, template }));
         self.averaged_template = average_templates(&mut self.templates);
     }
     pub fn prioritize_template(&mut self, index: usize) {
