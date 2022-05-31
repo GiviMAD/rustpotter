@@ -262,9 +262,7 @@ impl WakewordDetectorBuilder {
     }
     #[cfg(feature = "vad")]
     fn get_vad_mode(&self) -> Option<VadMode> {
-        if self.vad_mode.is_none() {
-            return None;
-        }
+        self.vad_mode.as_ref()?;
         match self.vad_mode.as_ref().unwrap() {
             VadMode::Quality => Some(VadMode::Quality),
             VadMode::LowBitrate => Some(VadMode::LowBitrate),
@@ -373,14 +371,10 @@ impl WakewordDetector {
             None
         };
         #[cfg(feature = "vad")]
-        let vad_detector = if vad_mode.is_some() {
-            Some(webrtc_vad::Vad::new_with_rate_and_mode(
-                webrtc_vad::SampleRate::Rate48kHz,
-                vad_mode.unwrap(),
-            ))
-        } else {
-            None
-        };
+        let vad_detector = vad_mode.map(|vad_mode| webrtc_vad::Vad::new_with_rate_and_mode(
+            webrtc_vad::SampleRate::Rate48kHz,
+            vad_mode,
+        ));
         let detector = WakewordDetector {
             threshold,
             averaged_threshold,
@@ -837,7 +831,7 @@ impl WakewordDetector {
             if self.voice_detections.len() > 100 {
                 self.voice_detections.drain(0..1);
             }
-            if self.voice_detections.iter().filter(|i| **i == true).count()
+            if self.voice_detections.iter().filter(|i| **i).count()
                 >= (self.vad_sensitivity * self.voice_detections.len() as f32) as usize
             {
                 debug!("voice detected; processing cache");
