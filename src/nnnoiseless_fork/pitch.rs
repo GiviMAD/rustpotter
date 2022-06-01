@@ -20,10 +20,10 @@ pub(crate) struct PitchFinder {
 
 impl PitchFinder {
     pub(crate) fn new() -> PitchFinder {
-        assert!(
-            PITCH_MAX_PERIOD + 1
-                >= PITCH_FRAME_SIZE / 4 + (PITCH_MAX_PERIOD - 3 * PITCH_MIN_PERIOD) / 4
-        );
+        // assert!(
+        //     PITCH_MAX_PERIOD + 1
+        //         >= PITCH_FRAME_SIZE / 4 + (PITCH_MAX_PERIOD - 3 * PITCH_MIN_PERIOD) / 4
+        // );
 
         let pitch_buf = vec![0.0; PITCH_BUF_SIZE / 2];
         let scratch = vec![0.0; PITCH_MAX_PERIOD + 1];
@@ -151,7 +151,7 @@ impl PitchFinder {
         let mut g = g0;
 
         // Look for any pitch at T/k */
-        for k in 2..=15 {
+        for (k, second_check_item) in SECOND_CHECK.iter().enumerate().skip(2) {
             let t1 = (2 * t0 + k) / (2 * k);
             if t1 < min_period {
                 break;
@@ -164,7 +164,7 @@ impl PitchFinder {
                     t0 + t1
                 }
             } else {
-                (2 * SECOND_CHECK[k] * t0 + k) / (2 * k)
+                (2 * second_check_item * t0 + k) / (2 * k)
             };
             xy = inner_prod(&x[max_period..], &x[(max_period - t1)..], n);
             let xy2 = inner_prod(&x[max_period..], &x[(max_period - t1b)..], n);
@@ -315,7 +315,7 @@ fn pitch_xcorr(xs: &[f32], ys: &[f32], xcorr: &mut [f32]) {
         let mut c2 = 0.0;
         let mut c3 = 0.0;
 
-        let mut y0 = ys[i + 0];
+        let mut y0 = ys[i];
         let mut y1 = ys[i + 1];
         let mut y2 = ys[i + 2];
         let mut y3 = ys[i + 3];
@@ -348,12 +348,12 @@ fn pitch_xcorr(xs: &[f32], ys: &[f32], xcorr: &mut [f32]) {
         }
 
         for j in xs_len_4..xs.len() {
-            c0 += xs[j] * ys[i + 0 + j];
+            c0 += xs[j] * ys[i  + j];
             c1 += xs[j] * ys[i + 1 + j];
             c2 += xs[j] * ys[i + 2 + j];
             c3 += xs[j] * ys[i + 3 + j];
         }
-        xcorr[i + 0] = c0;
+        xcorr[i] = c0;
         xcorr[i + 1] = c1;
         xcorr[i + 2] = c2;
         xcorr[i + 3] = c3;
@@ -464,15 +464,15 @@ fn pitch_downsample(x: &[f32], x_lp: &mut [f32]) {
     // Noise floor -40 dB
     ac[0] *= 1.0001;
     // Lag windowing
-    for i in 1..5 {
-        ac[i] -= ac[i] * (0.008 * i as f32) * (0.008 * i as f32);
+    for (i, ac_item) in ac.iter_mut().enumerate().skip(1) {
+        *ac_item -= *ac_item * (0.008 * i as f32) * (0.008 * i as f32);
     }
 
     lpc(&mut lpc_coeffs, &ac);
     let mut tmp = 1.0;
-    for i in 0..4 {
+    for lpc_coeffs_item in &mut lpc_coeffs {
         tmp *= 0.9;
-        lpc_coeffs[i] *= tmp;
+        *lpc_coeffs_item *= tmp;
     }
     // Add a zero
     lpc_coeffs2[0] = lpc_coeffs[0] + 0.8;

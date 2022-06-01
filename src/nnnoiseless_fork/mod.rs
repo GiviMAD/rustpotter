@@ -69,12 +69,12 @@ fn sin_cos_table() -> &'static [(f32, f32)] {
 }
 fn dct(out: &mut [f32], x: &[f32]) {
     let c = common();
-    for i in 0..NB_BANDS {
+    for (i, out_item) in out.iter_mut().enumerate().take(NB_BANDS) {
         let mut sum = 0.0;
-        for j in 0..NB_BANDS {
-            sum += x[j] * c.dct_table[j * NB_BANDS + i];
+        for (j, x_item) in x.iter().enumerate().take(NB_BANDS) {
+            sum += x_item * c.dct_table[j * NB_BANDS + i];
         }
-        out[i] = (sum as f64 * (2.0 / NB_BANDS as f64).sqrt()) as f32;
+        *out_item = (sum as f64 * (2.0 / NB_BANDS as f64).sqrt()) as f32;
     }
 }
 pub const EBAND_5MS: [usize; 22] = [
@@ -310,8 +310,8 @@ impl DenoiseFeatures {
             self.exp[i] /= (0.001 + self.ex[i] * self.ep[i]).sqrt();
         }
         dct(&mut tmp[..], &self.exp[..]);
-        for i in 0..NB_DELTA_CEPS {
-            self.features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i];
+        for (i, tmp_item) in tmp.iter().enumerate().take(NB_DELTA_CEPS) {
+            self.features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = *tmp_item;
         }
 
         self.features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3;
@@ -320,13 +320,13 @@ impl DenoiseFeatures {
         let mut log_max = -2.0;
         let mut follow = -2.0;
         let mut e = 0.0;
-        for i in 0..NB_BANDS {
-            ly[i] = (1e-2 + self.ex[i])
+        for (i, ly_item) in ly.iter_mut().enumerate().take(NB_BANDS) {
+            *ly_item = (1e-2 + self.ex[i])
                 .log10()
                 .max(log_max - 7.0)
                 .max(follow - 1.5);
-            log_max = log_max.max(ly[i]);
-            follow = (follow - 1.5).max(ly[i]);
+            log_max = log_max.max(*ly_item);
+            follow = (follow - 1.5).max(*ly_item);
             e += self.ex[i];
         }
 
