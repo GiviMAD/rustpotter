@@ -2,7 +2,6 @@ use crate::comparator::FeatureComparator;
 use crate::nnnoiseless_fork::{self, DenoiseFeatures};
 use crate::wakeword::{Wakeword, WakewordModel, WakewordTemplate, WAKEWORD_MODEL_VERSION};
 use hound::WavReader;
-use log::{debug, warn};
 use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, load_from_mem, save_file, save_to_mem};
 use std::collections::HashMap;
@@ -11,15 +10,26 @@ use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-#[cfg(feature = "vad")]
 use std::time::SystemTime;
 static INTERNAL_SAMPLE_RATE: usize = 48000;
+#[cfg(feature = "log")]
+use log::{debug, warn};
 
 #[cfg(feature = "vad")]
 /// Allowed vad modes
 pub type VadMode = webrtc_vad::VadMode;
 /// Allowed wav sample formats
 pub type SampleFormat = hound::SampleFormat;
+
+/// Dificulty for considering a frame as noise
+#[derive(Clone)]
+pub enum NoiseDetectionMode {
+    Hardest,
+    Hard,
+    Normal,
+    Easy,
+    Easiest,
+}
 /// Use this struct to configure and build your wakeword detector.
 /// ```
 /// use rustpotter::{WakewordDetectorBuilder};
@@ -41,7 +51,9 @@ pub struct WakewordDetectorBuilder {
     threshold: Option<f32>,
     comparator_band_size: Option<usize>,
     comparator_ref: Option<f32>,
-    max_silence_frames: Option<u16>,
+    noise_mode: Option<NoiseDetectionMode>,
+    noise_sensitivity: Option<f32>,
+    noise_delay: Option<u16>,
     #[cfg(feature = "vad")]
     vad_mode: Option<VadMode>,
     #[cfg(feature = "vad")]
@@ -64,7 +76,9 @@ impl WakewordDetectorBuilder {
             averaged_threshold: None,
             comparator_band_size: None,
             comparator_ref: None,
-            max_silence_frames: None,
+            noise_mode: None,
+            noise_delay: None,
+            noise_sensitivity: None,
             #[cfg(feature = "vad")]
             vad_mode: None,
             #[cfg(feature = "vad")]
@@ -86,7 +100,9 @@ impl WakewordDetectorBuilder {
             self.get_averaged_threshold(),
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
-            self.get_max_silence_frames(),
+            self.get_noise_mode(),
+            self.get_noise_delay(),
+            self.get_noise_sensitivity(),
             #[cfg(feature = "vad")]
             self.get_vad_mode(),
             #[cfg(feature = "vad")]
@@ -161,14 +177,6 @@ impl WakewordDetectorBuilder {
         self.comparator_ref = Some(value);
         self
     }
-    /// Configures consecutive number of samples containing only silence for
-    /// skip the comparison against the wakewords to avoid useless cpu consumption.
-    ///
-    /// Defaults to 10, 0 for disabled.
-    pub fn set_max_silence_frames(&mut self, value: u16) -> &mut Self {
-        self.max_silence_frames = Some(value);
-        self
-    }
     /// Enables eager mode.
     /// Terminate the detection as son as one result is above the score,
     /// instead of wait to see if the next frame has a higher score.
@@ -188,6 +196,32 @@ impl WakewordDetectorBuilder {
     /// Only applies when more than a wakeword is loaded.
     pub fn set_single_thread(&mut self, value: bool) -> &mut Self {
         self.single_thread = value;
+        self
+    }
+    /// Noise/silence ratio in the last second to consider noise detected.
+    ///
+    /// Defaults to 0.5.
+    ///
+    /// Only applies if noise detection is enabled.
+    pub fn set_noise_sensitivity(&mut self, value: f32) -> &mut Self {
+        assert!(value >= 0. || value <= 1.);
+        self.noise_sensitivity = Some(value);
+        self
+    }
+    /// Seconds to disable the noise detection after voice is detected.
+    ///
+    /// Defaults to 3.
+    ///
+    /// 0 for disabling the noise detection functionality.
+    pub fn set_noise_delay(&mut self, value: u16) -> &mut Self {
+        self.noise_delay = Some(value);
+        self
+    }
+    /// Use build-in noise detection to reduce computation on absence of noise.
+    /// Configures how difficult is to considering a frame as noise (the required noise lever)
+    /// Unless specified the noise detection is disabled.
+    pub fn set_noise_mode(&mut self, value: NoiseDetectionMode) -> &mut Self {
+        self.noise_mode = Some(value);
         self
     }
     #[cfg(feature = "vad")]
@@ -238,19 +272,26 @@ impl WakewordDetectorBuilder {
         self.channels.unwrap_or(1)
     }
     fn get_comparator_band_size(&self) -> usize {
-        self.comparator_band_size.unwrap_or(11)
+        self.comparator_band_size.unwrap_or(6)
     }
     fn get_comparator_ref(&self) -> f32 {
         self.comparator_ref.unwrap_or(0.22)
-    }
-    fn get_max_silence_frames(&self) -> u16 {
-        self.max_silence_frames.unwrap_or(10)
     }
     fn get_eager_mode(&self) -> bool {
         self.eager_mode
     }
     fn get_single_thread(&self) -> bool {
         self.single_thread
+    }
+    fn get_noise_mode(&self) -> Option<NoiseDetectionMode> {
+        self.noise_mode.as_ref()?;
+        Some(self.noise_mode.as_ref().unwrap().clone())
+    }
+    fn get_noise_sensitivity(&self) -> f32 {
+        self.noise_sensitivity.unwrap_or(0.5)
+    }
+    fn get_noise_delay(&self) -> u16 {
+        self.noise_delay.unwrap_or(3)
     }
     #[cfg(feature = "vad")]
     fn get_vad_sensitivity(&self) -> f32 {
@@ -327,10 +368,14 @@ pub struct WakewordDetector {
     result_state: Option<DetectedWakeword>,
     extractor: DenoiseFeatures,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
-    silence_frame_counter: u16,
-    max_silence_frames: u16,
+    noise_ref: f32,
+    noise_delay: u16,
+    noise_sensitivity: f32,
+    noise_detections: Vec<bool>,
+    noise_detection_time: SystemTime,
+    noise_detection_enabled: bool,
     #[cfg(feature = "vad")]
-    vad_enabled: bool,
+    vad_detection_enabled: bool,
     #[cfg(feature = "vad")]
     voice_detections: Vec<bool>,
     #[cfg(feature = "vad")]
@@ -355,7 +400,9 @@ impl WakewordDetector {
         averaged_threshold: f32,
         comparator_band_size: usize,
         comparator_ref: f32,
-        max_silence_frames: u16,
+        noise_mode: Option<NoiseDetectionMode>,
+        noise_delay: u16,
+        noise_sensitivity: f32,
         #[cfg(feature = "vad")] vad_mode: Option<VadMode>,
         #[cfg(feature = "vad")] vad_delay: u16,
         #[cfg(feature = "vad")] vad_sensitivity: f32,
@@ -371,10 +418,9 @@ impl WakewordDetector {
             None
         };
         #[cfg(feature = "vad")]
-        let vad_detector = vad_mode.map(|vad_mode| webrtc_vad::Vad::new_with_rate_and_mode(
-            webrtc_vad::SampleRate::Rate48kHz,
-            vad_mode,
-        ));
+        let vad_detector = vad_mode.map(|vad_mode| {
+            webrtc_vad::Vad::new_with_rate_and_mode(webrtc_vad::SampleRate::Rate48kHz, vad_mode)
+        });
         let detector = WakewordDetector {
             threshold,
             averaged_threshold,
@@ -383,8 +429,6 @@ impl WakewordDetector {
             bits_per_sample,
             samples_per_frame,
             channels,
-            silence_frame_counter: 0,
-            max_silence_frames,
             frames: Vec::new(),
             wakewords: HashMap::new(),
             buffering: true,
@@ -401,12 +445,18 @@ impl WakewordDetector {
             resampler,
             eager_mode,
             single_thread,
+            noise_ref: noise_mode.map(get_noise_ref).unwrap_or(0.),
+            noise_delay,
+            noise_sensitivity,
+            noise_detections: Vec::with_capacity(100),
+            noise_detection_time: SystemTime::UNIX_EPOCH,
+            noise_detection_enabled: noise_delay == 0,
             #[cfg(feature = "vad")]
             voice_detections: Vec::with_capacity(100),
             #[cfg(feature = "vad")]
             audio_cache: Vec::with_capacity(100),
             #[cfg(feature = "vad")]
-            vad_enabled: false,
+            vad_detection_enabled: false,
             #[cfg(feature = "vad")]
             vad_detector,
             #[cfg(feature = "vad")]
@@ -473,6 +523,7 @@ impl WakewordDetector {
         threshold: Option<f32>,
         sample_paths: Vec<String>,
     ) {
+        #[cfg(feature = "log")]
         debug!(
             "Adding wakeword \"{}\" (sample paths: {:?})",
             name, sample_paths
@@ -488,8 +539,10 @@ impl WakewordDetector {
             .map(|path| (path, self.extract_features_from_file(path)))
             .filter_map(|(path, result)| match result {
                 Ok(features) => Some((path.clone(), features.to_vec())),
-                Err(msg) => {
-                    warn!("{}", msg);
+                Err(_msg) => {
+                    #[cfg(feature = "log")]
+                    // TODO: Return Error
+                    warn!("{}", _msg);
                     None
                 }
             })
@@ -505,28 +558,30 @@ impl WakewordDetector {
         self.update_detection_frame_size();
         templates.iter().for_each(|wakeword_template| {
             samples_features.iter().for_each(|(_name, _template)| {
-                let score = score_frame(
+                let _score = score_frame(
                     wakeword_template.get_template().to_vec(),
                     _template.to_vec(),
                     &self.comparator,
                 );
+                #[cfg(feature = "log")]
                 debug!(
                     "Sample '{}' scored '{}' againts {}",
-                    wakeword_template.get_name(),
-                    score,
+                    wakeword_template._get_name(),
+                    _score,
                     _name
                 );
             });
             if averaged.is_some() {
-                let score = score_frame(
+                let _score = score_frame(
                     wakeword_template.get_template().to_vec(),
                     averaged.as_ref().unwrap().to_vec(),
                     &self.comparator,
                 );
+                #[cfg(feature = "log")]
                 debug!(
                     "Sample '{}' scored '{}' againts the averaged features",
-                    wakeword_template.get_name(),
-                    score
+                    wakeword_template._get_name(),
+                    _score
                 );
             }
         });
@@ -746,8 +801,11 @@ impl WakewordDetector {
                 max_frames = std::cmp::max(max_frames, wakeword.get_max_frames());
             }
         }
-        debug!("{} min", min_frames);
-        debug!("{} max", max_frames);
+        #[cfg(feature = "log")]
+        {
+            debug!("{} min", min_frames);
+            debug!("{} max", max_frames);
+        }
         self.min_frames = min_frames;
         self.max_frames = max_frames;
     }
@@ -809,13 +867,14 @@ impl WakewordDetector {
     fn apply_vad_detection(&mut self, resampled_audio: Vec<f32>) -> Option<DetectedWakeword> {
         if self.result_state.is_none()
             && self.vad_detector.is_some()
-            && (self.vad_enabled
+            && (self.vad_detection_enabled
                 || self.voice_detection_time.elapsed().unwrap().as_secs() >= self.vad_delay as u64)
         {
             let vad = self.vad_detector.as_mut().unwrap();
-            if !self.vad_enabled {
+            if !self.vad_detection_enabled {
+                #[cfg(feature = "log")]
                 debug!("switching to vad detector");
-                self.vad_enabled = true;
+                self.vad_detection_enabled = true;
             }
             let is_voice_result = vad.is_voice_segment(
                 &resampled_audio
@@ -834,6 +893,7 @@ impl WakewordDetector {
             if self.voice_detections.iter().filter(|i| **i).count()
                 >= (self.vad_sensitivity * self.voice_detections.len() as f32) as usize
             {
+                #[cfg(feature = "log")]
                 debug!("voice detected; processing cache");
                 self.audio_cache
                     .drain(0..self.audio_cache.len())
@@ -844,9 +904,9 @@ impl WakewordDetector {
                     });
                 self.voice_detections.clear();
                 self.voice_detection_time = SystemTime::now();
+                #[cfg(feature = "log")]
                 debug!("switching to feature detector");
-                self.vad_enabled = false;
-                self.silence_frame_counter = 0;
+                self.vad_detection_enabled = false;
                 self.process_encoded_audio(&resampled_audio, true)
             } else {
                 if self.max_frames != 0 {
@@ -868,19 +928,39 @@ impl WakewordDetector {
         run_detection: bool,
     ) -> Option<DetectedWakeword> {
         self.extractor.shift_and_filter_input(audio_chunk);
-        let silence = self.extractor.compute_frame_features();
-        let silence_detected =
-            if silence && self.result_state.is_none() && self.max_silence_frames != 0 {
-                if self.max_silence_frames > self.silence_frame_counter {
-                    self.silence_frame_counter += 1;
-                    self.max_silence_frames == self.silence_frame_counter
-                } else {
-                    true
-                }
-            } else {
-                self.silence_frame_counter = 0;
+        let noise_level = self.extractor.compute_frame_features();
+        let silence_detected = if self.noise_ref != 0.
+            && (self.noise_detection_enabled
+                || self.noise_delay == 0
+                || self.noise_detection_time.elapsed().unwrap().as_secs()
+                    >= self.noise_delay as u64)
+        {
+            self.noise_detections.push(noise_level > self.noise_ref);
+            if !self.noise_detection_enabled {
+                #[cfg(feature = "log")]
+                debug!("detecting noise...");
+                self.noise_detection_enabled = true;
+            }
+            if self.noise_detections.len() < 50 {
                 false
-            };
+            } else {
+                if self.noise_detections.len() > 100 {
+                    self.noise_detections.drain(0..1);
+                }
+                let noise_detected = self.noise_detections.iter().filter(|i| **i).count()
+                    >= (self.noise_sensitivity * self.noise_detections.len() as f32) as usize;
+                if noise_detected {
+                    #[cfg(feature = "log")]
+                    debug!("noise detected");
+                    self.noise_detections.clear();
+                    self.noise_detection_enabled = self.noise_delay == 0;
+                    self.noise_detection_time = SystemTime::now();
+                }
+                !noise_detected
+            }
+        } else {
+            false
+        };
         let features = self.extractor.features().to_vec();
         let mut detection: Option<DetectedWakeword> = None;
         if !self.wakewords.is_empty() && self.max_frames != 0 {
@@ -888,6 +968,7 @@ impl WakewordDetector {
             if self.frames.len() >= self.min_frames {
                 if self.buffering {
                     self.buffering = false;
+                    #[cfg(feature = "log")]
                     debug!("ready");
                 }
                 if run_detection && !silence_detected {
@@ -903,6 +984,7 @@ impl WakewordDetector {
     fn extract_features_from_file(&mut self, file_path: &str) -> Result<Vec<Vec<f32>>, String> {
         let path = Path::new(file_path);
         if !path.exists() || !path.is_file() {
+            #[cfg(feature = "log")]
             warn!("File \"{}\" not found!", file_path);
             return Err("Can not read file".to_string());
         }
@@ -958,8 +1040,8 @@ impl WakewordDetector {
             .into_iter()
             .filter_map(|audio_chuck| {
                 feature_generator.shift_input(audio_chuck);
-                let silence = feature_generator.compute_frame_features();
-                if silence && is_silence {
+                let noise_level = feature_generator.compute_frame_features();
+                if noise_level < 0.04 && is_silence {
                     None
                 } else {
                     is_silence = false;
@@ -977,20 +1059,29 @@ impl WakewordDetector {
             Some(result) => {
                 #[cfg(feature = "vad")]
                 {
-                    if self.vad_enabled {
-                        self.vad_enabled = false;
+                    if self.vad_detection_enabled {
+                        self.vad_detection_enabled = false;
+                        #[cfg(feature = "log")]
                         debug!("switching to feature detector");
                     }
                     self.voice_detection_time = SystemTime::now();
                 }
+                self.noise_detection_time = SystemTime::now();
+                if self.noise_detection_enabled {
+                    self.noise_detection_enabled = self.noise_delay == 0;
+                    #[cfg(feature = "log")]
+                    debug!("noise detected");
+                }
                 if self.eager_mode {
                     if result.index != 0 {
+                        #[cfg(feature = "log")]
                         debug!("Sorting '{}' templates", result.wakeword);
                         self.wakewords
                             .get_mut(&result.wakeword)
                             .unwrap()
                             .prioritize_template(result.index);
                     }
+                    #[cfg(feature = "log")]
                     debug!(
                         "wakeword '{}' detected, score {}",
                         result.wakeword, result.score
@@ -1004,6 +1095,7 @@ impl WakewordDetector {
                         let prev_score = prev_result.score;
                         let prev_index = prev_result.index;
                         if result.wakeword == prev_wakeword && result.score < prev_score {
+                            #[cfg(feature = "log")]
                             debug!(
                                 "wakeword '{}' detected, score {}",
                                 result.wakeword, prev_score
@@ -1043,6 +1135,8 @@ impl WakewordDetector {
         {
             self.voice_detection_time = SystemTime::now();
         }
+        self.noise_detection_enabled = self.noise_delay == 0;
+        self.noise_detection_time = SystemTime::now();
         self.frames.clear();
         self.buffering = true;
         self.result_state = None;
@@ -1184,15 +1278,16 @@ fn run_wakeword_detection(
 ) -> Option<DetectedWakeword> {
     if averaged_threshold > 0. {
         if let Some(template) = averaged_template {
-        let score = score_frame(features.to_vec(), template, comparator);
-        if score < averaged_threshold {
-            return None;
+            let score = score_frame(features.to_vec(), template, comparator);
+            if score < averaged_threshold {
+                return None;
+            }
+            #[cfg(feature = "log")]
+            debug!(
+                "wakeword '{}' passes averaged detection with score {}",
+                wakeword_name, score
+            );
         }
-        debug!(
-            "wakeword '{}' passes averaged detection with score {}",
-            wakeword_name, score
-        );
-    }
     }
     let mut detection: Option<DetectedWakeword> = None;
     for (index, template) in templates.iter().enumerate() {
@@ -1201,11 +1296,12 @@ fn run_wakeword_detection(
             template.get_template().to_vec(),
             comparator,
         );
+        #[cfg(feature = "log")]
         debug!(
             "wakeword '{}' scored {} - template '{}'",
             wakeword_name,
             score,
-            template.get_name()
+            template._get_name()
         );
         if score < threshold {
             continue;
@@ -1242,6 +1338,15 @@ fn score_frame(
             .collect::<Vec<_>>(),
     );
     score
+}
+fn get_noise_ref(mode: NoiseDetectionMode) -> f32 {
+    match mode {
+        NoiseDetectionMode::Hardest => 45000.,
+        NoiseDetectionMode::Hard => 30000.,
+        NoiseDetectionMode::Normal => 15000.,
+        NoiseDetectionMode::Easy => 9000.,
+        NoiseDetectionMode::Easiest => 3000.,
+    }
 }
 #[inline(always)]
 fn convert_f32_sample_ref(value: &f32) -> f32 {

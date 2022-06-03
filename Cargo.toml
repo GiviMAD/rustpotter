@@ -1,27 +1,34 @@
 [package]
 name = "rustpotter"
-version = "0.10.2"
+version = "0.11.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "A free and open source wake word spotter forged in rust."
 authors = ["Miguel Álvarez Díez <miguelwork92@gmail.com>"]
 repository = "https://github.com/GiviMAD/rustpotter"
+
 [dependencies]
-log = "0.4.6"
-simple-matrix = "0.1"
-rustfft = "6.0.1"
-savefile = "0.10.1"
-savefile-derive = "0.10.1"
-rubato = "0.11.0"
-once_cell = "1.4.0"
 hound = "3.4.0"
+once_cell = "1.4.0"
+rubato = "0.11.0"
+rustfft = "6.0.1"
+savefile = { version = "0.10.1", default-features = false }
+savefile-derive = "0.10.1"
+simple-matrix = "0.1"
+# optional
+log = { version = "0.4.6", optional = true }
 webrtc-vad = { version = "0.4.0", optional = true }
+
 [dev-dependencies]
 simple_logger = "2.1.0"
+log = "0.4.6"
 bencher = "0.1.5"
+
+[features]
+default = []
+log = ["dep:log"]
+vad = ["dep:webrtc-vad"]
+
 [[bench]]
 name = "benches"
 harness = false
-[features]
-default = []
-vad = ["dep:webrtc-vad"]    

@@ -282,8 +282,8 @@ impl DenoiseFeatures {
     /// - `exp` is the band correlation between `x` and `p`
     /// - `features` are all the features of that get input to the neural network.
     ///
-    /// The return value is `true` if the input was pretty much silent.
-    pub fn compute_frame_features(&mut self) -> bool {
+    /// The returns the noise level.
+    pub fn compute_frame_features(&mut self) -> f32 {
         let mut ly = [0.0; NB_BANDS];
         let mut tmp = [0.0; NB_BANDS];
 
@@ -335,7 +335,7 @@ impl DenoiseFeatures {
             for i in 0..NB_FEATURES {
                 self.features[i] = 0.0;
             }
-            return true;
+            return e;
         }
         dct(&mut self.features, &ly[..]);
         self.features[0] -= 12.0;
@@ -388,7 +388,7 @@ impl DenoiseFeatures {
 
         self.features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM as f32 - 2.1;
 
-        false
+        e
     }    
 }
 

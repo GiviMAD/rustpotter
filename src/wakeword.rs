@@ -50,7 +50,7 @@ pub struct WakewordTemplate {
 }
 
 impl WakewordTemplate {
-    pub fn get_name(&self) -> &str {
+    pub fn _get_name(&self) -> &str {
         &self.name
     }
     pub fn get_template(&self) -> &[Vec<f32>] {
