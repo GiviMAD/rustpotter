@@ -82,8 +82,7 @@ fn it_can_spot_wakewords_while_detecting_noise() {
     // enable_rustpotter_log();
     can_spot_wakewords_with_silence_frames_test_impl(
         &mut WakewordDetectorBuilder::new()
-            .set_noise_mode(rustpotter::NoiseDetectionMode::Normal)
-            .set_noise_delay(1),
+            .set_noise_mode(rustpotter::NoiseDetectionMode::Normal),
         1000,
     );
 }

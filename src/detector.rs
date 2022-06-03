@@ -54,7 +54,6 @@ pub struct WakewordDetectorBuilder {
     comparator_ref: Option<f32>,
     noise_mode: Option<NoiseDetectionMode>,
     noise_sensitivity: Option<f32>,
-    noise_delay: Option<u16>,
     #[cfg(feature = "vad")]
     vad_mode: Option<VadMode>,
     #[cfg(feature = "vad")]
@@ -78,7 +77,6 @@ impl WakewordDetectorBuilder {
             comparator_band_size: None,
             comparator_ref: None,
             noise_mode: None,
-            noise_delay: None,
             noise_sensitivity: None,
             #[cfg(feature = "vad")]
             vad_mode: None,
@@ -206,15 +204,6 @@ impl WakewordDetectorBuilder {
     pub fn set_noise_sensitivity(&mut self, value: f32) -> &mut Self {
         assert!(value >= 0. || value <= 1.);
         self.noise_sensitivity = Some(value);
-        self
-    }
-    /// Seconds to disable the noise detection after voice is detected.
-    ///
-    /// Defaults to 3.
-    ///
-    /// 0 for disabling the noise detection functionality.
-    pub fn set_noise_delay(&mut self, value: u16) -> &mut Self {
-        self.noise_delay = Some(value);
         self
     }
     /// Use build-in noise detection to reduce computation on absence of noise.
