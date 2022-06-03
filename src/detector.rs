@@ -10,6 +10,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+#[cfg(feature = "vad")]
 use std::time::SystemTime;
 static INTERNAL_SAMPLE_RATE: usize = 48000;
 #[cfg(feature = "log")]
@@ -101,7 +102,6 @@ impl WakewordDetectorBuilder {
             self.get_comparator_band_size(),
             self.get_comparator_ref(),
             self.get_noise_mode(),
-            self.get_noise_delay(),
             self.get_noise_sensitivity(),
             #[cfg(feature = "vad")]
             self.get_vad_mode(),
@@ -290,9 +290,6 @@ impl WakewordDetectorBuilder {
     fn get_noise_sensitivity(&self) -> f32 {
         self.noise_sensitivity.unwrap_or(0.5)
     }
-    fn get_noise_delay(&self) -> u16 {
-        self.noise_delay.unwrap_or(3)
-    }
     #[cfg(feature = "vad")]
     fn get_vad_sensitivity(&self) -> f32 {
         self.vad_sensitivity.unwrap_or(0.5)
@@ -369,11 +366,8 @@ pub struct WakewordDetector {
     extractor: DenoiseFeatures,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
     noise_ref: f32,
-    noise_delay: u16,
     noise_sensitivity: f32,
     noise_detections: Vec<bool>,
-    noise_detection_time: SystemTime,
-    noise_detection_enabled: bool,
     #[cfg(feature = "vad")]
     vad_detection_enabled: bool,
     #[cfg(feature = "vad")]
@@ -401,7 +395,6 @@ impl WakewordDetector {
         comparator_band_size: usize,
         comparator_ref: f32,
         noise_mode: Option<NoiseDetectionMode>,
-        noise_delay: u16,
         noise_sensitivity: f32,
         #[cfg(feature = "vad")] vad_mode: Option<VadMode>,
         #[cfg(feature = "vad")] vad_delay: u16,
@@ -446,11 +439,8 @@ impl WakewordDetector {
             eager_mode,
             single_thread,
             noise_ref: noise_mode.map(get_noise_ref).unwrap_or(0.),
-            noise_delay,
             noise_sensitivity,
             noise_detections: Vec::with_capacity(100),
-            noise_detection_time: SystemTime::UNIX_EPOCH,
-            noise_detection_enabled: noise_delay == 0,
             #[cfg(feature = "vad")]
             voice_detections: Vec::with_capacity(100),
             #[cfg(feature = "vad")]
@@ -929,18 +919,8 @@ impl WakewordDetector {
     ) -> Option<DetectedWakeword> {
         self.extractor.shift_and_filter_input(audio_chunk);
         let noise_level = self.extractor.compute_frame_features();
-        let silence_detected = if self.noise_ref != 0.
-            && (self.noise_detection_enabled
-                || self.noise_delay == 0
-                || self.noise_detection_time.elapsed().unwrap().as_secs()
-                    >= self.noise_delay as u64)
-        {
+        let silence_detected = if self.noise_ref != 0. {
             self.noise_detections.push(noise_level > self.noise_ref);
-            if !self.noise_detection_enabled {
-                #[cfg(feature = "log")]
-                debug!("detecting noise...");
-                self.noise_detection_enabled = true;
-            }
             if self.noise_detections.len() < 50 {
                 false
             } else {
@@ -953,8 +933,6 @@ impl WakewordDetector {
                     #[cfg(feature = "log")]
                     debug!("noise detected");
                     self.noise_detections.clear();
-                    self.noise_detection_enabled = self.noise_delay == 0;
-                    self.noise_detection_time = SystemTime::now();
                 }
                 !noise_detected
             }
@@ -1066,12 +1044,6 @@ impl WakewordDetector {
                     }
                     self.voice_detection_time = SystemTime::now();
                 }
-                self.noise_detection_time = SystemTime::now();
-                if self.noise_detection_enabled {
-                    self.noise_detection_enabled = self.noise_delay == 0;
-                    #[cfg(feature = "log")]
-                    debug!("noise detected");
-                }
                 if self.eager_mode {
                     if result.index != 0 {
                         #[cfg(feature = "log")]
@@ -1135,8 +1107,6 @@ impl WakewordDetector {
         {
             self.voice_detection_time = SystemTime::now();
         }
-        self.noise_detection_enabled = self.noise_delay == 0;
-        self.noise_detection_time = SystemTime::now();
         self.frames.clear();
         self.buffering = true;
         self.result_state = None;
