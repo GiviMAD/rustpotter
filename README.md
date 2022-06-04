@@ -1,6 +1,6 @@
 # Rustpotter
 
-## A free and open source wake word spotter forged in rust
+## A free and open source wake word spotter forged in rust.
 
 <div align="center">
     <img src="./logo.png?raw=true" width="400px"</img> 
@@ -14,9 +14,18 @@ But don't hesitate to report any issues in the meantime.
 
 ## Description
 
-This project allows to detect specific wake words on a live audio stream, to do so it generates a set of features from some audio samples to later compare them with the features generated from a live stream, to calculate the probability of a match.
+This project allows to detect specific wake words on a live audio stream.
+
+ To do so it generates a set of features from some audio samples to later compare them with the features generated from the live stream, to calculate the probability of a match.
 
 The features can be loaded from a previous generated model file or extracted from the samples before start the live streaming.
+
+## Web Demo
+
+ This [web demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly try out Rustpotter using a web browser
+
+ It includes some models generated using multiple voices from a text-to-speech service, 
+ you can also load your own ones.
 
 ## Audio Format
 
