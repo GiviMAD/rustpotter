@@ -357,11 +357,11 @@ pub struct WakewordDetector {
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
     noise_ref: f32,
     noise_sensitivity: f32,
-    noise_detections: Vec<bool>,
+    noise_detections: [u8; 2],
     #[cfg(feature = "vad")]
     vad_detection_enabled: bool,
     #[cfg(feature = "vad")]
-    voice_detections: Vec<bool>,
+    voice_detections: [u8; 2],
     #[cfg(feature = "vad")]
     voice_detection_time: SystemTime,
     #[cfg(feature = "vad")]
@@ -430,9 +430,9 @@ impl WakewordDetector {
             single_thread,
             noise_ref: noise_mode.map(get_noise_ref).unwrap_or(0.),
             noise_sensitivity,
-            noise_detections: Vec::with_capacity(100),
+            noise_detections: [0, 0],
             #[cfg(feature = "vad")]
-            voice_detections: Vec::with_capacity(100),
+            voice_detections: [0, 0],
             #[cfg(feature = "vad")]
             audio_cache: Vec::with_capacity(100),
             #[cfg(feature = "vad")]
@@ -862,16 +862,25 @@ impl WakewordDetector {
                     .map(|i| *i as i16)
                     .collect::<Vec<i16>>(),
             );
-            self.voice_detections
-                .push(is_voice_result.is_err() || is_voice_result.unwrap());
-            if self.voice_detections.len() < 30 {
+            let is_voice_frame = is_voice_result.is_err() || is_voice_result.unwrap();
+            let detections_counter = self.voice_detections[0] + self.voice_detections[1] + 1;
+            if is_voice_frame {
+                self.voice_detections[1] += 1;
+                if detections_counter > 100 {
+                    self.voice_detections[0] -= 1;
+                }
+            } else {
+                self.voice_detections[0] += 1;
+                if detections_counter > 100 {
+                    self.voice_detections[1] -= 1;
+                }
+            }
+
+            if detections_counter < 30 {
                 return self.process_encoded_audio(&resampled_audio, true);
             }
-            if self.voice_detections.len() > 100 {
-                self.voice_detections.drain(0..1);
-            }
-            if self.voice_detections.iter().filter(|i| **i).count()
-                >= (self.vad_sensitivity * self.voice_detections.len() as f32) as usize
+            if self.voice_detections[0]
+                >= (self.vad_sensitivity * self.voice_detections.len() as f32) as u8
             {
                 #[cfg(feature = "log")]
                 debug!("voice detected; processing cache");
@@ -882,7 +891,8 @@ impl WakewordDetector {
                     .for_each(|i| {
                         self.process_encoded_audio(&i, false);
                     });
-                self.voice_detections.clear();
+                self.voice_detections[0] = 0;
+                self.voice_detections[1] = 0;
                 self.voice_detection_time = SystemTime::now();
                 #[cfg(feature = "log")]
                 debug!("switching to feature detector");
@@ -910,19 +920,29 @@ impl WakewordDetector {
         self.extractor.shift_and_filter_input(audio_chunk);
         let noise_level = self.extractor.compute_frame_features();
         let silence_detected = if self.noise_ref != 0. && self.result_state.is_none() {
-            self.noise_detections.push(noise_level > self.noise_ref);
-            if self.noise_detections.len() < 100 {
+            let is_noise_frame = noise_level > self.noise_ref;
+            let detections_counter = self.noise_detections[0] + self.noise_detections[1] + 1;
+            if is_noise_frame {
+                self.noise_detections[1] += 1;
+                if detections_counter > 100 {
+                    self.noise_detections[0] -= 1;
+                }
+            } else {
+                self.noise_detections[0] += 1;
+                if detections_counter > 100 {
+                    self.noise_detections[1] -= 1;
+                }
+            }
+            if detections_counter < 100 {
                 false
             } else {
-                if self.noise_detections.len() > 100 {
-                    self.noise_detections.drain(0..1);
-                }
-                let noise_detected = self.noise_detections.iter().filter(|i| **i).count()
-                    >= (self.noise_sensitivity * self.noise_detections.len() as f32) as usize;
+                let noise_detected = self.noise_detections[0]
+                    >= (self.noise_sensitivity * self.noise_detections.len() as f32) as u8;
                 if noise_detected {
                     #[cfg(feature = "log")]
                     debug!("noise detected");
-                    self.noise_detections.clear();
+                    self.noise_detections[0] = 0;
+                    self.noise_detections[1] = 0;
                 }
                 !noise_detected
             }
@@ -1300,7 +1320,7 @@ fn score_frame(
     score
 }
 fn get_noise_ref(mode: NoiseDetectionMode) -> f32 {
-    let reference =     match mode {
+    let reference = match mode {
         NoiseDetectionMode::Hardest => 45000.,
         NoiseDetectionMode::Hard => 30000.,
         NoiseDetectionMode::Normal => 15000.,
