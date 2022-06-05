@@ -1300,13 +1300,16 @@ fn score_frame(
     score
 }
 fn get_noise_ref(mode: NoiseDetectionMode) -> f32 {
-    match mode {
+    let reference =     match mode {
         NoiseDetectionMode::Hardest => 45000.,
         NoiseDetectionMode::Hard => 30000.,
         NoiseDetectionMode::Normal => 15000.,
         NoiseDetectionMode::Easy => 9000.,
         NoiseDetectionMode::Easiest => 3000.,
-    }
+    };
+    #[cfg(feature = "log")]
+    debug!("noise level ref: {}", reference);
+    reference
 }
 #[inline(always)]
 fn convert_f32_sample_ref(value: &f32) -> f32 {
