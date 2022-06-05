@@ -136,7 +136,9 @@ impl WakewordDetectorBuilder {
     ///
     /// Defaults to 16; Allowed values: 8, 16, 24, 32
     pub fn set_bits_per_sample(&mut self, value: u16) -> &mut Self {
-        self.bits_per_sample = Some(value);
+        if 8 == value || 16 == value || 24 == value || 32 == value {
+            self.bits_per_sample = Some(value);
+        }
         self
     }
     /// Configures the detector expected sample rate for the audio chunks to process.
@@ -273,8 +275,7 @@ impl WakewordDetectorBuilder {
         self.single_thread
     }
     fn get_noise_mode(&self) -> Option<NoiseDetectionMode> {
-        self.noise_mode.as_ref()?;
-        Some(self.noise_mode.as_ref().unwrap().clone())
+        self.noise_mode.clone()
     }
     fn get_noise_sensitivity(&self) -> f32 {
         self.noise_sensitivity.unwrap_or(0.5)
@@ -908,9 +909,9 @@ impl WakewordDetector {
     ) -> Option<DetectedWakeword> {
         self.extractor.shift_and_filter_input(audio_chunk);
         let noise_level = self.extractor.compute_frame_features();
-        let silence_detected = if self.noise_ref != 0. {
+        let silence_detected = if self.noise_ref != 0. && self.result_state.is_none() {
             self.noise_detections.push(noise_level > self.noise_ref);
-            if self.noise_detections.len() < 50 {
+            if self.noise_detections.len() < 100 {
                 false
             } else {
                 if self.noise_detections.len() > 100 {
