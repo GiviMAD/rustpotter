@@ -25,7 +25,7 @@ log = "0.4.6"
 bencher = "0.1.5"
 
 [features]
-default = ["log"]
+default = []
 log = ["dep:log"]
 vad = ["dep:webrtc-vad"]
 
