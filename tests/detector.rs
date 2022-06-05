@@ -2,14 +2,17 @@ use std::{
     fs::File,
     io::{BufReader, Read},
 };
+static INIT_LOGGER: std::sync::Once = std::sync::Once::new();
 
 use rustpotter::WakewordDetectorBuilder;
 
 pub fn enable_rustpotter_log() {
-    simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
-        .init()
-        .unwrap();
+    INIT_LOGGER.call_once(|| {
+        simple_logger::SimpleLogger::new()
+            .with_level(log::LevelFilter::Debug)
+            .init()
+            .unwrap()
+    });
 }
 #[test]
 fn it_returns_correct_samples_per_frame() {
@@ -38,7 +41,7 @@ fn it_returns_correct_frame_byte_length_when_resampling() {
 }
 #[test]
 fn it_can_add_wakeword_from_samples() {
-    // enable_rustpotter_log();
+    enable_rustpotter_log();
     let dir = env!("CARGO_MANIFEST_DIR");
     let samples = vec![
         dir.to_owned() + "/tests/resources/oye_casa_g_1.wav",
@@ -59,7 +62,7 @@ fn it_can_add_wakeword_from_samples() {
 
 #[test]
 fn it_can_add_wakeword_from_model() {
-    // enable_rustpotter_log();
+    enable_rustpotter_log();
     let mut detector = WakewordDetectorBuilder::new().build();
     let dir = env!("CARGO_MANIFEST_DIR");
     let result = detector
@@ -69,20 +72,19 @@ fn it_can_add_wakeword_from_model() {
 
 #[test]
 fn it_can_spot_wakewords() {
-    // enable_rustpotter_log();
+    enable_rustpotter_log();
     can_spot_wakewords_test_impl(&mut WakewordDetectorBuilder::new());
 }
 #[test]
 fn it_can_spot_wakewords_in_eager_mode() {
-    // enable_rustpotter_log();
+    enable_rustpotter_log();
     can_spot_wakewords_test_impl(&mut WakewordDetectorBuilder::new().set_eager_mode(true));
 }
 #[test]
 fn it_can_spot_wakewords_while_detecting_noise() {
-    // enable_rustpotter_log();
+    enable_rustpotter_log();
     can_spot_wakewords_with_silence_frames_test_impl(
-        &mut WakewordDetectorBuilder::new()
-            .set_noise_mode(rustpotter::NoiseDetectionMode::Normal),
+        &mut WakewordDetectorBuilder::new().set_noise_mode(rustpotter::NoiseDetectionMode::Normal),
         1000,
     );
 }
@@ -95,7 +97,7 @@ fn can_spot_wakewords_with_silence_frames_test_impl(
     builder: &mut WakewordDetectorBuilder,
     silence_frames: usize,
 ) {
-    // enable_rustpotter_log();
+    enable_rustpotter_log();
     let mut detector = builder.set_sample_rate(16000).build();
     let dir = env!("CARGO_MANIFEST_DIR");
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
