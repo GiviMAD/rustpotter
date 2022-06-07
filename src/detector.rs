@@ -912,11 +912,11 @@ impl WakewordDetector {
                     }
                 }
             }
-            if self.voice_detections[0] + self.voice_detections[1] < 30 {
+            if self.voice_detections[0] + self.voice_detections[1] < 50 {
                 return self.process_encoded_audio(&resampled_audio, true);
             }
             if self.voice_detections[0]
-                >= (self.vad_sensitivity * self.voice_detections.len() as f32) as u8
+                >= (self.vad_sensitivity * (self.voice_detections[0] + self.voice_detections[1]) as f32) as u8
             {
                 #[cfg(feature = "log")]
                 debug!("voice detected; processing cache");
@@ -1110,6 +1110,8 @@ impl WakewordDetector {
                         #[cfg(feature = "log")]
                         debug!("switching to feature detector");
                     }
+                    self.voice_detections[0] = 0;
+                    self.voice_detections[1] = 0;
                     self.voice_detection_time = SystemTime::now();
                 }
                 if self.eager_mode {
@@ -1176,6 +1178,8 @@ impl WakewordDetector {
     fn reset(&mut self) {
         #[cfg(feature = "vad")]
         {
+            self.voice_detections[0] = 0;
+            self.voice_detections[1] = 0;
             self.voice_detection_time = SystemTime::now();
         }
         self.frames.clear();
