@@ -2,6 +2,8 @@ use crate::comparator::FeatureComparator;
 use crate::nnnoiseless_fork::{self, DenoiseFeatures};
 use crate::wakeword::{Wakeword, WakewordModel, WakewordTemplate, WAKEWORD_MODEL_VERSION};
 use hound::WavReader;
+#[cfg(feature = "log")]
+use log::{debug, warn};
 use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, load_from_mem, save_file, save_to_mem};
 use std::collections::HashMap;
@@ -12,10 +14,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 #[cfg(feature = "vad")]
 use std::time::SystemTime;
-static INTERNAL_SAMPLE_RATE: usize = 48000;
-#[cfg(feature = "log")]
-use log::{debug, warn};
 
+const INTERNAL_SAMPLE_RATE: usize = 48000;
+const TRAINING_WAKEWORD_SUBFIX: &str = "_training";
 #[cfg(feature = "vad")]
 /// Allowed vad modes
 pub type VadMode = webrtc_vad::VadMode;
@@ -48,6 +49,7 @@ pub struct WakewordDetectorBuilder {
     channels: Option<u16>,
     eager_mode: bool,
     single_thread: bool,
+    training_mode: bool,
     averaged_threshold: Option<f32>,
     threshold: Option<f32>,
     comparator_band_size: Option<usize>,
@@ -72,6 +74,7 @@ impl WakewordDetectorBuilder {
             // detection options
             eager_mode: false,
             single_thread: false,
+            training_mode: false,
             threshold: None,
             averaged_threshold: None,
             comparator_band_size: None,
@@ -95,6 +98,7 @@ impl WakewordDetectorBuilder {
             self.get_channels(),
             self.get_eager_mode(),
             self.get_single_thread(),
+            self.get_training_mode(),
             self.get_threshold(),
             self.get_averaged_threshold(),
             self.get_comparator_band_size(),
@@ -175,6 +179,16 @@ impl WakewordDetectorBuilder {
     /// Defaults to 0.22
     pub fn set_comparator_ref(&mut self, value: f32) -> &mut Self {
         self.comparator_ref = Some(value);
+        self
+    }
+    /// Enables trainning mode.
+    /// Generates a personal wakeword based on the detections of the loaded wakewords
+    ///
+    /// Needs to be used in a quiet room.
+    ///
+    /// Defaults to false.
+    pub fn set_training_mode(&mut self, value: bool) -> &mut Self {
+        self.training_mode = value;
         self
     }
     /// Enables eager mode.
@@ -274,6 +288,9 @@ impl WakewordDetectorBuilder {
     fn get_single_thread(&self) -> bool {
         self.single_thread
     }
+    fn get_training_mode(&self) -> bool {
+        self.training_mode
+    }
     fn get_noise_mode(&self) -> Option<NoiseDetectionMode> {
         self.noise_mode.clone()
     }
@@ -336,6 +353,7 @@ pub struct WakewordDetector {
     averaged_threshold: f32,
     eager_mode: bool,
     single_thread: bool,
+    training_mode: bool,
     resampler: Option<FftFixedInOut<f32>>,
     comparator: Arc<FeatureComparator>,
     #[cfg(feature = "vad")]
@@ -380,6 +398,7 @@ impl WakewordDetector {
         // detection options
         eager_mode: bool,
         single_thread: bool,
+        training_mode: bool,
         threshold: f32,
         averaged_threshold: f32,
         comparator_band_size: usize,
@@ -428,6 +447,7 @@ impl WakewordDetector {
             resampler,
             eager_mode,
             single_thread,
+            training_mode,
             noise_ref: noise_mode.map(get_noise_ref).unwrap_or(0.),
             noise_sensitivity,
             noise_detections: [0, 0],
@@ -510,9 +530,12 @@ impl WakewordDetector {
         );
         if self.wakewords.get_mut(name).is_none() {
             self.wakewords.insert(
-                String::from(name),
+                name.to_string(),
                 Wakeword::new(enabled, averaged_threshold, threshold),
             );
+            if self.training_mode {
+                self.add_training_wakeword(name);
+            }
         }
         let samples_features = sample_paths
             .iter()
@@ -768,9 +791,20 @@ impl WakewordDetector {
     ) -> Result<(), String> {
         let wakeword_name = String::from(model.get_name());
         let wakeword = Wakeword::from_model(model, enabled);
+        if self.training_mode {
+            self.add_training_wakeword(&wakeword_name);
+        }
         self.wakewords.insert(wakeword_name, wakeword);
         self.update_detection_frame_size();
         Ok(())
+    }
+
+    fn add_training_wakeword(&mut self, wakeword_name: &str) {
+        let training_wakeword = Wakeword::new(false, None, None);
+        self.wakewords.insert(
+            wakeword_name.to_string() + TRAINING_WAKEWORD_SUBFIX,
+            training_wakeword,
+        );
     }
     fn update_detection_frame_size(&mut self) {
         let mut min_frames = 9999;
@@ -863,20 +897,22 @@ impl WakewordDetector {
                     .collect::<Vec<i16>>(),
             );
             let is_voice_frame = is_voice_result.is_err() || is_voice_result.unwrap();
-            let detections_counter = self.voice_detections[0] + self.voice_detections[1] + 1;
             if is_voice_frame {
-                self.voice_detections[1] += 1;
-                if detections_counter > 100 {
-                    self.voice_detections[0] -= 1;
+                if self.voice_detections[0] != 100 {
+                    self.voice_detections[0] += 1;
+                    if self.voice_detections[0] + self.voice_detections[1] > 100 {
+                        self.voice_detections[1] -= 1;
+                    }
                 }
             } else {
-                self.voice_detections[0] += 1;
-                if detections_counter > 100 {
-                    self.voice_detections[1] -= 1;
+                if self.voice_detections[1] != 100 {
+                    self.voice_detections[1] += 1;
+                    if self.voice_detections[0] + self.voice_detections[1] > 100 {
+                        self.voice_detections[0] -= 1;
+                    }
                 }
             }
-
-            if detections_counter < 30 {
+            if self.voice_detections[0] + self.voice_detections[1] < 30 {
                 return self.process_encoded_audio(&resampled_audio, true);
             }
             if self.voice_detections[0]
@@ -917,27 +953,36 @@ impl WakewordDetector {
         audio_chunk: &[f32],
         run_detection: bool,
     ) -> Option<DetectedWakeword> {
-        self.extractor.shift_and_filter_input(audio_chunk);
+        if self.training_mode {
+            self.extractor.shift_input(audio_chunk);
+        } else {
+            self.extractor.shift_and_filter_input(audio_chunk);
+        }
         let noise_level = self.extractor.compute_frame_features();
         let silence_detected = if self.noise_ref != 0. && self.result_state.is_none() {
             let is_noise_frame = noise_level > self.noise_ref;
-            let detections_counter = self.noise_detections[0] + self.noise_detections[1] + 1;
             if is_noise_frame {
-                self.noise_detections[1] += 1;
-                if detections_counter > 100 {
-                    self.noise_detections[0] -= 1;
+                if self.noise_detections[0] != 100 {
+                    self.noise_detections[0] += 1;
+                    if self.noise_detections[0] + self.noise_detections[1] > 100 {
+                        self.noise_detections[1] -= 1;
+                    }
                 }
             } else {
-                self.noise_detections[0] += 1;
-                if detections_counter > 100 {
-                    self.noise_detections[1] -= 1;
+                if self.noise_detections[1] != 100 {
+                    self.noise_detections[1] += 1;
+                    if self.noise_detections[0] + self.noise_detections[1] > 100 {
+                        self.noise_detections[0] -= 1;
+                    }
                 }
             }
-            if detections_counter < 100 {
+            if self.noise_detections[0] + self.noise_detections[1] < 100 {
                 false
             } else {
                 let noise_detected = self.noise_detections[0]
-                    >= (self.noise_sensitivity * self.noise_detections.len() as f32) as u8;
+                    >= (self.noise_sensitivity
+                        * (self.noise_detections[0] + self.noise_detections[1]) as f32)
+                        as u8;
                 if noise_detected {
                     #[cfg(feature = "log")]
                     debug!("noise detected");
@@ -961,6 +1006,19 @@ impl WakewordDetector {
                 }
                 if run_detection && !silence_detected {
                     detection = self.run_detection();
+                    if self.training_mode && detection.is_some() {
+                        let detection_ref = detection.as_ref().unwrap();
+                        if let Some(training_wakeword) = self
+                            .wakewords
+                            .get_mut(&(detection_ref.wakeword.clone() + TRAINING_WAKEWORD_SUBFIX))
+                        {
+                            let template_num = training_wakeword.get_templates().len() + 1;
+                            training_wakeword.add_template_features(
+                                template_num.to_string(),
+                                detection_ref.features.as_ref().unwrap().to_vec(),
+                            );
+                        }
+                    }
                 }
             }
             if self.frames.len() >= self.max_frames {
@@ -1087,6 +1145,7 @@ impl WakewordDetector {
                                 wakeword: result.wakeword,
                                 score: prev_score,
                                 index: prev_index,
+                                features: result.features,
                             });
                         }
                     }
@@ -1100,11 +1159,13 @@ impl WakewordDetector {
                     let wakeword = prev_result.wakeword.clone();
                     let score = prev_result.score;
                     let index = prev_result.index;
+                    let features = prev_result.features.clone();
                     self.reset();
                     Some(DetectedWakeword {
                         wakeword,
                         score,
                         index,
+                        features,
                     })
                 } else {
                     None
@@ -1178,6 +1239,7 @@ impl WakewordDetector {
                             averaged_threshold,
                             threshold,
                             name.clone(),
+                            self.training_mode,
                         )
                     })
                     .collect::<Vec<DetectedWakeword>>()
@@ -1204,6 +1266,7 @@ impl WakewordDetector {
                         let averaged_template = wakeword.get_averaged_template();
                         let comparator = self.comparator.clone();
                         let eager_mode = self.eager_mode;
+                        let training_mode = self.training_mode;
                         let features_copy = features.to_vec();
                         Some(thread::spawn(move || {
                             run_wakeword_detection(
@@ -1215,6 +1278,7 @@ impl WakewordDetector {
                                 averaged_threshold,
                                 threshold,
                                 wakeword_name,
+                                training_mode,
                             )
                         }))
                     })
@@ -1255,6 +1319,7 @@ fn run_wakeword_detection(
     averaged_threshold: f32,
     threshold: f32,
     wakeword_name: String,
+    training_mode: bool,
 ) -> Option<DetectedWakeword> {
     if averaged_threshold > 0. {
         if let Some(template) = averaged_template {
@@ -1294,6 +1359,15 @@ fn run_wakeword_detection(
             wakeword: wakeword_name.clone(),
             score,
             index,
+            features: if training_mode {
+                let mut compared_features = features.to_vec();
+                if compared_features.len() > template.get_template().len() {
+                    compared_features.drain(template.get_template().len()..compared_features.len());
+                }
+                Some(compared_features.to_vec())
+            } else {
+                None
+            },
         });
         if eager_mode {
             break;
@@ -1354,6 +1428,8 @@ pub struct DetectedWakeword {
     pub score: f32,
     /// Detected wakeword template index.
     pub index: usize,
+    /// Detected features, only available on training mode
+    pub features: Option<Vec<Vec<f32>>>,
 }
 impl Clone for DetectedWakeword {
     fn clone(&self) -> Self {
@@ -1361,6 +1437,11 @@ impl Clone for DetectedWakeword {
             wakeword: self.wakeword.clone(),
             score: self.score,
             index: self.index,
+            features: if let Some(features) = &self.features {
+                Some(features.to_vec())
+            } else {
+                None
+            },
         }
     }
 }

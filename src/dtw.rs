@@ -20,7 +20,9 @@ impl<T: Copy> Dtw<T> {
             0,
             (self.distance_fn)(first_sequence[0], second_sequence[0]),
         );
-        for (row_index, first_sequence_item) in first_sequence.iter().enumerate().take(self.state_m).skip(1) {
+        for (row_index, first_sequence_item) in
+            first_sequence.iter().enumerate().take(self.state_m).skip(1)
+        {
             let cost = (self.distance_fn)(*first_sequence_item, second_sequence[0]);
             distance_cost_matrix.set(
                 row_index,
@@ -28,7 +30,12 @@ impl<T: Copy> Dtw<T> {
                 cost + distance_cost_matrix.get(row_index - 1, 0).unwrap(),
             );
         }
-        for (column_index, second_sequence_item) in second_sequence.iter().enumerate().take(self.state_n).skip(1) {
+        for (column_index, second_sequence_item) in second_sequence
+            .iter()
+            .enumerate()
+            .take(self.state_n)
+            .skip(1)
+        {
             let cost = (self.distance_fn)(first_sequence[0], *second_sequence_item);
             distance_cost_matrix.set(
                 0,
@@ -36,10 +43,16 @@ impl<T: Copy> Dtw<T> {
                 cost + distance_cost_matrix.get(0, column_index - 1).unwrap(),
             );
         }
-        for (row_index, first_sequence_item) in first_sequence.iter().enumerate().take(self.state_m).skip(1) {
-            for (column_index, second_sequence_item) in second_sequence.iter().enumerate().take(self.state_n).skip(1) {
-                let cost =
-                    (self.distance_fn)(*first_sequence_item, *second_sequence_item);
+        for (row_index, first_sequence_item) in
+            first_sequence.iter().enumerate().take(self.state_m).skip(1)
+        {
+            for (column_index, second_sequence_item) in second_sequence
+                .iter()
+                .enumerate()
+                .take(self.state_n)
+                .skip(1)
+            {
+                let cost = (self.distance_fn)(*first_sequence_item, *second_sequence_item);
                 let insertion = distance_cost_matrix
                     .get(row_index - 1, column_index)
                     .unwrap();

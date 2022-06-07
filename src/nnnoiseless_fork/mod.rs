@@ -12,11 +12,11 @@ mod fft;
 mod pitch;
 pub const FRAME_SIZE: usize = 120 << FRAME_SIZE_SHIFT;
 const FREQ_SIZE: usize = FRAME_SIZE + 1;
-const NB_BANDS: usize = 22;
+const NB_BANDS: usize = 11;
 const NB_FEATURES: usize = NB_BANDS + 3 * NB_DELTA_CEPS + 2;
 const WINDOW_SIZE: usize = 2 * FRAME_SIZE;
 const CEPS_MEM: usize = 8;
-const NB_DELTA_CEPS: usize = 6;
+const NB_DELTA_CEPS: usize = 3;
 const PITCH_MAX_PERIOD: usize = 768;
 const PITCH_FRAME_SIZE: usize = 960;
 const PITCH_BUF_SIZE: usize = PITCH_MAX_PERIOD + PITCH_FRAME_SIZE;
@@ -389,7 +389,7 @@ impl DenoiseFeatures {
         self.features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM as f32 - 2.1;
 
         e
-    }    
+    }
 }
 
 /// Fourier transforms the input.

@@ -348,7 +348,7 @@ fn pitch_xcorr(xs: &[f32], ys: &[f32], xcorr: &mut [f32]) {
         }
 
         for j in xs_len_4..xs.len() {
-            c0 += xs[j] * ys[i  + j];
+            c0 += xs[j] * ys[i + j];
             c1 += xs[j] * ys[i + 1 + j];
             c2 += xs[j] * ys[i + 2 + j];
             c3 += xs[j] * ys[i + 3 + j];

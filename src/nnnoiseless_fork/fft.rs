@@ -39,7 +39,6 @@ where
         .map(|(w, (x, (y, z)))| (w, x, y, z))
 }
 
-
 #[derive(Clone)]
 pub struct RealFft {
     sin_cos: &'static [(f32, f32)],

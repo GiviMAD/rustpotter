@@ -11,7 +11,7 @@ mod wakeword;
 pub use detector::DetectedWakeword;
 pub use detector::NoiseDetectionMode;
 pub use detector::SampleFormat;
-pub use detector::WakewordDetector;
-pub use detector::WakewordDetectorBuilder;
 #[cfg(feature = "vad")]
 pub use detector::VadMode;
+pub use detector::WakewordDetector;
+pub use detector::WakewordDetectorBuilder;
