@@ -3,7 +3,7 @@ name = "rustpotter"
 version = "0.14.4"
 edition = "2021"
 license = "Apache-2.0"
-description = "A free and open source wake word spotter forged in rust."
+description = "An open source wake word spotter forged in rust."
 authors = ["Miguel Álvarez Díez <miguelwork92@gmail.com>"]
 repository = "https://github.com/GiviMAD/rustpotter"
 
