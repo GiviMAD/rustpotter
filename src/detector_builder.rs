@@ -1,4 +1,6 @@
 use crate::{SampleFormat, Endianness, NoiseDetectionMode, WakewordDetector, detector::INTERNAL_SAMPLE_RATE};
+#[cfg(feature = "vad")]
+use crate::VadMode;
 
 /// Use this struct to configure and build your wakeword detector.
 /// ```
