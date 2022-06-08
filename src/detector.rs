@@ -198,7 +198,7 @@ impl WakewordDetectorBuilder {
         self.comparator_ref = Some(value);
         self
     }
-    /// Enables trainning mode.
+    /// Enables training mode.
     /// Generates a personal wakeword based on the detections of the loaded wakewords
     ///
     /// Needs to be used in a quiet room.
