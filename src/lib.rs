@@ -5,12 +5,14 @@ extern crate savefile_derive;
 
 mod comparator;
 mod detector;
+mod detector_builder;
 mod dtw;
 mod wakeword;
 pub use detector::DetectedWakeword;
 pub use detector::NoiseDetectionMode;
 pub use detector::SampleFormat;
+pub use detector::Endianness;
 #[cfg(feature = "vad")]
 pub use detector::VadMode;
 pub use detector::WakewordDetector;
-pub use detector::WakewordDetectorBuilder;
+pub use detector_builder::WakewordDetectorBuilder;
