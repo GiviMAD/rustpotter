@@ -97,6 +97,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nnnoiseless"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99c041f552e9876564df5f9396ed2756b0bd84862e14899dba9854cdec749ff3"
+dependencies = [
+ "once_cell",
+ "rustfft",
+]
+
+[[package]]
 name = "num-complex"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -212,11 +222,12 @@ dependencies = [
 
 [[package]]
 name = "rustpotter"
-version = "0.13.1"
+version = "0.14.0"
 dependencies = [
  "bencher",
  "hound",
  "log",
+ "nnnoiseless",
  "once_cell",
  "rubato",
  "rustfft",

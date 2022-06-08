@@ -6,7 +6,6 @@ extern crate savefile_derive;
 mod comparator;
 mod detector;
 mod dtw;
-mod nnnoiseless_fork;
 mod wakeword;
 pub use detector::DetectedWakeword;
 pub use detector::NoiseDetectionMode;

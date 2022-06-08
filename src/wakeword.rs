@@ -42,6 +42,9 @@ impl WakewordModel {
     pub fn get_name(&self) -> &str {
         &self.name
     }
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+    }
 }
 #[derive(Clone)]
 pub struct WakewordTemplate {

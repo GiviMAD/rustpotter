@@ -1,9 +1,9 @@
 use crate::comparator::FeatureComparator;
-use crate::nnnoiseless_fork::{self, DenoiseFeatures};
 use crate::wakeword::{Wakeword, WakewordModel, WakewordTemplate, WAKEWORD_MODEL_VERSION};
 use hound::WavReader;
 #[cfg(feature = "log")]
 use log::{debug, warn};
+use nnnoiseless::DenoiseFeatures;
 use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, load_from_mem, save_file, save_to_mem};
 use std::collections::HashMap;
@@ -32,6 +32,13 @@ pub enum NoiseDetectionMode {
     Easy,
     Easiest,
 }
+/// Supported endianness modes
+#[derive(Clone)]
+pub enum Endianness {
+    Big,
+    Little,
+    Native,
+}
 /// Use this struct to configure and build your wakeword detector.
 /// ```
 /// use rustpotter::{WakewordDetectorBuilder};
@@ -47,6 +54,7 @@ pub struct WakewordDetectorBuilder {
     sample_format: Option<SampleFormat>,
     bits_per_sample: Option<u16>,
     channels: Option<u16>,
+    endianness: Option<Endianness>,
     eager_mode: bool,
     single_thread: bool,
     training_mode: bool,
@@ -71,6 +79,7 @@ impl WakewordDetectorBuilder {
             sample_format: None,
             bits_per_sample: None,
             channels: None,
+            endianness: None,
             // detection options
             eager_mode: false,
             single_thread: false,
@@ -96,6 +105,7 @@ impl WakewordDetectorBuilder {
             self.get_sample_format(),
             self.get_bits_per_sample(),
             self.get_channels(),
+            self.get_endianness(),
             self.get_eager_mode(),
             self.get_single_thread(),
             self.get_training_mode(),
@@ -165,6 +175,13 @@ impl WakewordDetectorBuilder {
     /// Defaults to 1
     pub fn set_channels(&mut self, value: u16) -> &mut Self {
         self.channels = Some(value);
+        self
+    }
+    /// Configures expected endianness for the process_buffer input
+    ///
+    /// Defaults to little-endian
+    pub fn set_endianness(&mut self, value: Endianness) -> &mut Self {
+        self.endianness = Some(value);
         self
     }
     /// Configures the band-size for the comparator used to match the samples.
@@ -276,6 +293,9 @@ impl WakewordDetectorBuilder {
     fn get_channels(&self) -> u16 {
         self.channels.unwrap_or(1)
     }
+    fn get_endianness(&self) -> Endianness {
+        self.endianness.clone().unwrap_or(Endianness::Little)
+    }
     fn get_comparator_band_size(&self) -> usize {
         self.comparator_band_size.unwrap_or(6)
     }
@@ -348,6 +368,7 @@ pub struct WakewordDetector {
     sample_format: SampleFormat,
     bits_per_sample: u16,
     channels: u16,
+    endianness: Endianness,
     // detection options
     threshold: f32,
     averaged_threshold: f32,
@@ -395,6 +416,7 @@ impl WakewordDetector {
         sample_format: SampleFormat,
         bits_per_sample: u16,
         channels: u16,
+        endianness: Endianness,
         // detection options
         eager_mode: bool,
         single_thread: bool,
@@ -431,6 +453,7 @@ impl WakewordDetector {
             bits_per_sample,
             samples_per_frame,
             channels,
+            endianness,
             frames: Vec::new(),
             wakewords: HashMap::new(),
             buffering: true,
@@ -487,6 +510,28 @@ impl WakewordDetector {
         let model: WakewordModel =
             load_file(path, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
         self.add_wakeword_from_model(model, enabled)
+    }
+    /// Generates the model file bytes from a trained a wakeword.
+    /// Asserts training mode is enabled.
+    pub fn generate_trained_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
+        assert!(self.training_mode, "training mode should be enabled");
+        let mut model = self.get_wakeword_model(&(name.clone() + TRAINING_WAKEWORD_SUBFIX))?;
+        model.set_name(&name);
+        save_to_mem(WAKEWORD_MODEL_VERSION, &model)
+            .map_err(|_| String::from("Unable to generate model bytes"))
+    }
+    /// Generates a model file from a trained a wakeword on the desired path.
+    /// Asserts training mode is enabled.
+    pub fn generate_trained_wakeword_model_file(
+        &self,
+        name: String,
+        path: String,
+    ) -> Result<(), String> {
+        assert!(self.training_mode, "training mode should be enabled");
+        let mut model = self.get_wakeword_model(&(name.clone() + TRAINING_WAKEWORD_SUBFIX))?;
+        model.set_name(&name);
+        save_file(path, WAKEWORD_MODEL_VERSION, &model)
+            .map_err(|_| String::from("Unable to generate file"))
     }
     /// Generates the model file bytes from a loaded a wakeword.
     pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
@@ -631,27 +676,63 @@ impl WakewordDetector {
         assert!(audio_buffer.len() == self.get_bytes_per_frame());
         match self.sample_format {
             SampleFormat::Int => {
-                let audio_chunk =  audio_buffer
-                .chunks_exact((self.bits_per_sample/8) as usize)
-                .map(|bytes| {
-                    match self.bits_per_sample {
-                        8 => {
-                            i8::from_le_bytes([bytes[0]]) as i32
-                        }
-                        16 => {
-                            i16::from_le_bytes([bytes[0], bytes[1]]) as i32
-                        }
-                        24 => {
-                            i32::from_le_bytes([0, bytes[0], bytes[1], bytes[2]])
-                        }
-                        32 => {
-                            i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
-                        }
-                        _default => {
-                            panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
-                        }
-                    }}).collect::<Vec<i32>>();
-
+                let buffer_chunks = audio_buffer.chunks_exact((self.bits_per_sample / 8) as usize);
+                let audio_chunk = match self.endianness {
+                    Endianness::Little => buffer_chunks.map(|bytes| {
+                        match self.bits_per_sample {
+                            8 => {
+                                i8::from_le_bytes([bytes[0]]) as i32
+                            }
+                            16 => {
+                                i16::from_le_bytes([bytes[0], bytes[1]]) as i32
+                            }
+                            24 => {
+                                i32::from_le_bytes([0, bytes[0], bytes[1], bytes[2]])
+                            }
+                            32 => {
+                                i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                            }
+                            _default => {
+                                panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                            }
+                        }}).collect::<Vec<i32>>(),
+                        Endianness::Big => buffer_chunks.map(|bytes| {
+                            match self.bits_per_sample {
+                                8 => {
+                                    i8::from_be_bytes([bytes[0]]) as i32
+                                }
+                                16 => {
+                                    i16::from_be_bytes([bytes[0], bytes[1]]) as i32
+                                }
+                                24 => {
+                                    i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])
+                                }
+                                32 => {
+                                    i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                                }
+                                _default => {
+                                    panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                                }
+                            }}).collect::<Vec<i32>>(),
+                        Endianness::Native =>  buffer_chunks.map(|bytes| {
+                            match self.bits_per_sample {
+                                8 => {
+                                    i8::from_ne_bytes([bytes[0]]) as i32
+                                }
+                                16 => {
+                                    i16::from_ne_bytes([bytes[0], bytes[1]]) as i32
+                                }
+                                24 => {
+                                    i32::from_ne_bytes([0, bytes[0], bytes[1], bytes[2]])
+                                }
+                                32 => {
+                                    i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                                }
+                                _default => {
+                                    panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                                }
+                            }}).collect::<Vec<i32>>(),
+                };
                 self.process_int(&audio_chunk)
             }
             SampleFormat::Float => {
@@ -916,7 +997,9 @@ impl WakewordDetector {
                 return self.process_encoded_audio(&resampled_audio, true);
             }
             if self.voice_detections[0]
-                >= (self.vad_sensitivity * (self.voice_detections[0] + self.voice_detections[1]) as f32) as u8
+                >= (self.vad_sensitivity
+                    * (self.voice_detections[0] + self.voice_detections[1]) as f32)
+                    as u8
             {
                 #[cfg(feature = "log")]
                 debug!("voice detected; processing cache");
@@ -958,7 +1041,8 @@ impl WakewordDetector {
         } else {
             self.extractor.shift_and_filter_input(audio_chunk);
         }
-        let noise_level = self.extractor.compute_frame_features();
+        self.extractor.compute_frame_features();
+        let noise_level: f32 = self.extractor.ex.iter().sum();
         let silence_detected = if self.noise_ref != 0. && self.result_state.is_none() {
             let is_noise_frame = noise_level > self.noise_ref;
             if is_noise_frame {
@@ -1080,18 +1164,19 @@ impl WakewordDetector {
             }
         };
         let mut is_silence = true;
-        let mut feature_generator = DenoiseFeatures::new();
+        let mut feature_extractor = DenoiseFeatures::new();
         let all_features = audio_pcm_signed_resampled
-            .chunks_exact(nnnoiseless_fork::FRAME_SIZE)
+            .chunks_exact(nnnoiseless::FRAME_SIZE)
             .into_iter()
             .filter_map(|audio_chuck| {
-                feature_generator.shift_input(audio_chuck);
-                let noise_level = feature_generator.compute_frame_features();
+                feature_extractor.shift_input(audio_chuck);
+                feature_extractor.compute_frame_features();
+                let noise_level: f32 = feature_extractor.ex.iter().sum();
                 if noise_level < 0.04 && is_silence {
                     None
                 } else {
                     is_silence = false;
-                    let features = feature_generator.features();
+                    let features = feature_extractor.features();
                     Some(features.to_vec())
                 }
             })
