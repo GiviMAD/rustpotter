@@ -750,12 +750,10 @@ impl WakewordDetector {
                         self.noise_detections[1] -= 1;
                     }
                 }
-            } else {
-                if self.noise_detections[1] != 100 {
-                    self.noise_detections[1] += 1;
-                    if self.noise_detections[0] + self.noise_detections[1] > 100 {
-                        self.noise_detections[0] -= 1;
-                    }
+            } else if self.noise_detections[1] != 100 {
+                self.noise_detections[1] += 1;
+                if self.noise_detections[0] + self.noise_detections[1] > 100 {
+                    self.noise_detections[0] -= 1;
                 }
             }
             if self.noise_detections[0] + self.noise_detections[1] < 100 {
@@ -1181,16 +1179,13 @@ fn score_frame(
     score
 }
 fn get_noise_ref(mode: NoiseDetectionMode) -> f32 {
-    let reference = match mode {
+    match mode {
         NoiseDetectionMode::Hardest => 45000.,
         NoiseDetectionMode::Hard => 30000.,
         NoiseDetectionMode::Normal => 15000.,
         NoiseDetectionMode::Easy => 9000.,
         NoiseDetectionMode::Easiest => 3000.,
-    };
-    #[cfg(feature = "log")]
-    debug!("noise level ref: {}", reference);
-    reference
+    }
 }
 #[inline(always)]
 fn convert_f32_sample_ref(value: &f32) -> f32 {
@@ -1224,11 +1219,7 @@ impl Clone for DetectedWakeword {
             wakeword: self.wakeword.clone(),
             score: self.score,
             index: self.index,
-            features: if let Some(features) = &self.features {
-                Some(features.to_vec())
-            } else {
-                None
-            },
+            features: self.features.as_ref().map(|features| features.to_vec()),
         }
     }
 }

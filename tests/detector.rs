@@ -78,13 +78,13 @@ fn it_can_spot_wakewords() {
 #[test]
 fn it_can_spot_wakewords_in_eager_mode() {
     enable_rustpotter_log();
-    can_spot_wakewords_test_impl(&mut WakewordDetectorBuilder::new().set_eager_mode(true));
+    can_spot_wakewords_test_impl(WakewordDetectorBuilder::new().set_eager_mode(true));
 }
 #[test]
 fn it_can_spot_wakewords_while_detecting_noise() {
     enable_rustpotter_log();
     can_spot_wakewords_with_silence_frames_test_impl(
-        &mut WakewordDetectorBuilder::new().set_noise_mode(rustpotter::NoiseDetectionMode::Normal),
+        WakewordDetectorBuilder::new().set_noise_mode(rustpotter::NoiseDetectionMode::Normal),
         1000,
     );
 }
