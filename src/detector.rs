@@ -194,7 +194,7 @@ impl WakewordDetector {
         &mut self,
         bytes: Vec<u8>,
         enabled: bool,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let model: WakewordModel =
             load_from_mem(&bytes, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
         self.add_wakeword_from_model(model, enabled)
@@ -204,7 +204,7 @@ impl WakewordDetector {
         &mut self,
         path: String,
         enabled: bool,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let model: WakewordModel =
             load_file(path, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
         self.add_wakeword_from_model(model, enabled)
@@ -567,15 +567,15 @@ impl WakewordDetector {
         &mut self,
         model: WakewordModel,
         enabled: bool,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let wakeword_name = String::from(model.get_name());
         let wakeword = Wakeword::from_model(model, enabled);
         if self.training_mode {
             self.add_training_wakeword(&wakeword_name);
         }
-        self.wakewords.insert(wakeword_name, wakeword);
+        self.wakewords.insert(wakeword_name.clone(), wakeword);
         self.update_detection_frame_size();
-        Ok(())
+        Ok(wakeword_name)
     }
 
     fn add_training_wakeword(&mut self, wakeword_name: &str) {
