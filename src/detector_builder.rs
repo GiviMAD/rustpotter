@@ -20,7 +20,6 @@ pub struct WakewordDetectorBuilder {
     endianness: Option<Endianness>,
     eager_mode: bool,
     single_thread: bool,
-    training_mode: bool,
     averaged_threshold: Option<f32>,
     threshold: Option<f32>,
     comparator_band_size: Option<usize>,
@@ -46,7 +45,6 @@ impl WakewordDetectorBuilder {
             // detection options
             eager_mode: false,
             single_thread: false,
-            training_mode: false,
             threshold: None,
             averaged_threshold: None,
             comparator_band_size: None,
@@ -71,7 +69,6 @@ impl WakewordDetectorBuilder {
             self.get_endianness(),
             self.get_eager_mode(),
             self.get_single_thread(),
-            self.get_training_mode(),
             self.get_threshold(),
             self.get_averaged_threshold(),
             self.get_comparator_band_size(),
@@ -159,16 +156,6 @@ impl WakewordDetectorBuilder {
     /// Defaults to 0.22
     pub fn set_comparator_ref(&mut self, value: f32) -> &mut Self {
         self.comparator_ref = Some(value);
-        self
-    }
-    /// Enables training mode.
-    /// Generates a personal wakeword based on the detections of the loaded wakewords
-    ///
-    /// Needs to be used in a quiet room.
-    ///
-    /// Defaults to false.
-    pub fn set_training_mode(&mut self, value: bool) -> &mut Self {
-        self.training_mode = value;
         self
     }
     /// Enables eager mode.
@@ -270,9 +257,6 @@ impl WakewordDetectorBuilder {
     }
     fn get_single_thread(&self) -> bool {
         self.single_thread
-    }
-    fn get_training_mode(&self) -> bool {
-        self.training_mode
     }
     fn get_noise_mode(&self) -> Option<NoiseDetectionMode> {
         self.noise_mode.clone()

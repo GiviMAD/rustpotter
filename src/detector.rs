@@ -16,7 +16,6 @@ use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
 pub(crate) const INTERNAL_SAMPLE_RATE: usize = 48000;
-const TRAINING_WAKEWORD_SUBFIX: &str = "_training";
 #[cfg(feature = "vad")]
 /// Allowed vad modes
 pub type VadMode = webrtc_vad::VadMode;
@@ -72,7 +71,6 @@ pub struct WakewordDetector {
     averaged_threshold: f32,
     eager_mode: bool,
     single_thread: bool,
-    training_mode: bool,
     resampler: Option<FftFixedInOut<f32>>,
     comparator: Arc<FeatureComparator>,
     #[cfg(feature = "vad")]
@@ -118,7 +116,6 @@ impl WakewordDetector {
         // detection options
         eager_mode: bool,
         single_thread: bool,
-        training_mode: bool,
         threshold: f32,
         averaged_threshold: f32,
         comparator_band_size: usize,
@@ -168,7 +165,6 @@ impl WakewordDetector {
             resampler,
             eager_mode,
             single_thread,
-            training_mode,
             noise_ref: noise_mode.map(get_noise_ref).unwrap_or(0.),
             noise_sensitivity,
             noise_detections: [0, 0],
@@ -208,28 +204,6 @@ impl WakewordDetector {
         let model: WakewordModel =
             load_file(path, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
         self.add_wakeword_from_model(model, enabled)
-    }
-    /// Generates the model file bytes from a trained a wakeword.
-    /// Asserts training mode is enabled.
-    pub fn generate_trained_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
-        assert!(self.training_mode, "training mode should be enabled");
-        let mut model = self.get_wakeword_model(&(name.clone() + TRAINING_WAKEWORD_SUBFIX))?;
-        model.set_name(&name);
-        save_to_mem(WAKEWORD_MODEL_VERSION, &model)
-            .map_err(|_| String::from("Unable to generate model bytes"))
-    }
-    /// Generates a model file from a trained a wakeword on the desired path.
-    /// Asserts training mode is enabled.
-    pub fn generate_trained_wakeword_model_file(
-        &self,
-        name: String,
-        path: String,
-    ) -> Result<(), String> {
-        assert!(self.training_mode, "training mode should be enabled");
-        let mut model = self.get_wakeword_model(&(name.clone() + TRAINING_WAKEWORD_SUBFIX))?;
-        model.set_name(&name);
-        save_file(path, WAKEWORD_MODEL_VERSION, &model)
-            .map_err(|_| String::from("Unable to generate file"))
     }
     /// Generates the model file bytes from a loaded a wakeword.
     pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
@@ -276,9 +250,6 @@ impl WakewordDetector {
                 name.to_string(),
                 Wakeword::new(enabled, averaged_threshold, threshold),
             );
-            if self.training_mode {
-                self.add_training_wakeword(name);
-            }
         }
         let samples_features = sample_paths
             .iter()
@@ -434,8 +405,10 @@ impl WakewordDetector {
                 self.process_int(&audio_chunk)
             }
             SampleFormat::Float => {
-                let audio_chunk = audio_buffer
-                    .chunks_exact((self.bits_per_sample/8) as usize)
+                let buffer_chunks = audio_buffer.chunks_exact((self.bits_per_sample / 8) as usize);
+                let audio_chunk: Vec<f32> = match self.endianness {
+                    Endianness::Little => 
+                    buffer_chunks
                     .map(|bytes| {
                         match self.bits_per_sample {
                             32 => {
@@ -445,7 +418,32 @@ impl WakewordDetector {
                                 panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
                             }
                         }
-                    }).collect::<Vec<f32>>();
+                    }).collect::<Vec<f32>>(),
+                    Endianness::Big => 
+                    buffer_chunks
+                    .map(|bytes| {
+                        match self.bits_per_sample {
+                            32 => {
+                                f32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                            }
+                            _default => {
+                                panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
+                            }
+                        }
+                    }).collect::<Vec<f32>>(),
+                    Endianness::Native => 
+                    buffer_chunks
+                    .map(|bytes| {
+                        match self.bits_per_sample {
+                            32 => {
+                                f32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                            }
+                            _default => {
+                                panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
+                            }
+                        }
+                    }).collect::<Vec<f32>>(),
+                };
                 self.process_f32(&audio_chunk)
             }
         }
@@ -570,21 +568,11 @@ impl WakewordDetector {
     ) -> Result<String, String> {
         let wakeword_name = String::from(model.get_name());
         let wakeword = Wakeword::from_model(model, enabled);
-        if self.training_mode {
-            self.add_training_wakeword(&wakeword_name);
-        }
         self.wakewords.insert(wakeword_name.clone(), wakeword);
         self.update_detection_frame_size();
         Ok(wakeword_name)
     }
 
-    fn add_training_wakeword(&mut self, wakeword_name: &str) {
-        let training_wakeword = Wakeword::new(false, None, None);
-        self.wakewords.insert(
-            wakeword_name.to_string() + TRAINING_WAKEWORD_SUBFIX,
-            training_wakeword,
-        );
-    }
     fn update_detection_frame_size(&mut self) {
         let mut min_frames = 9999;
         let mut max_frames = 0;
@@ -734,11 +722,7 @@ impl WakewordDetector {
         audio_chunk: &[f32],
         run_detection: bool,
     ) -> Option<DetectedWakeword> {
-        if self.training_mode {
-            self.extractor.shift_input(audio_chunk);
-        } else {
-            self.extractor.shift_and_filter_input(audio_chunk);
-        }
+        self.extractor.shift_and_filter_input(audio_chunk);
         self.extractor.compute_frame_features();
         let noise_level: f32 = self.extractor.ex.iter().sum();
         let silence_detected = if self.noise_ref != 0. && self.result_state.is_none() {
@@ -786,19 +770,6 @@ impl WakewordDetector {
                 }
                 if run_detection && !silence_detected {
                     detection = self.run_detection();
-                    if self.training_mode && detection.is_some() {
-                        let detection_ref = detection.as_ref().unwrap();
-                        if let Some(training_wakeword) = self
-                            .wakewords
-                            .get_mut(&(detection_ref.wakeword.clone() + TRAINING_WAKEWORD_SUBFIX))
-                        {
-                            let template_num = training_wakeword.get_templates().len() + 1;
-                            training_wakeword.add_template_features(
-                                template_num.to_string(),
-                                detection_ref.features.as_ref().unwrap().to_vec(),
-                            );
-                        }
-                    }
                 }
             }
             if self.frames.len() >= self.max_frames {
@@ -928,7 +899,6 @@ impl WakewordDetector {
                                 wakeword: result.wakeword,
                                 score: prev_score,
                                 index: prev_index,
-                                features: result.features,
                             });
                         }
                     }
@@ -942,13 +912,11 @@ impl WakewordDetector {
                     let wakeword = prev_result.wakeword.clone();
                     let score = prev_result.score;
                     let index = prev_result.index;
-                    let features = prev_result.features.clone();
                     self.reset();
                     Some(DetectedWakeword {
                         wakeword,
                         score,
                         index,
-                        features,
                     })
                 } else {
                     None
@@ -1024,7 +992,6 @@ impl WakewordDetector {
                             averaged_threshold,
                             threshold,
                             name.clone(),
-                            self.training_mode,
                         )
                     })
                     .collect::<Vec<DetectedWakeword>>()
@@ -1051,7 +1018,6 @@ impl WakewordDetector {
                         let averaged_template = wakeword.get_averaged_template();
                         let comparator = self.comparator.clone();
                         let eager_mode = self.eager_mode;
-                        let training_mode = self.training_mode;
                         let features_copy = features.to_vec();
                         Some(thread::spawn(move || {
                             run_wakeword_detection(
@@ -1063,7 +1029,6 @@ impl WakewordDetector {
                                 averaged_threshold,
                                 threshold,
                                 wakeword_name,
-                                training_mode,
                             )
                         }))
                     })
@@ -1104,7 +1069,6 @@ fn run_wakeword_detection(
     averaged_threshold: f32,
     threshold: f32,
     wakeword_name: String,
-    training_mode: bool,
 ) -> Option<DetectedWakeword> {
     if averaged_threshold > 0. {
         if let Some(template) = averaged_template {
@@ -1144,15 +1108,6 @@ fn run_wakeword_detection(
             wakeword: wakeword_name.clone(),
             score,
             index,
-            features: if training_mode {
-                let mut compared_features = features.to_vec();
-                if compared_features.len() > template.get_template().len() {
-                    compared_features.drain(template.get_template().len()..compared_features.len());
-                }
-                Some(compared_features.to_vec())
-            } else {
-                None
-            },
         });
         if eager_mode {
             break;
@@ -1210,8 +1165,6 @@ pub struct DetectedWakeword {
     pub score: f32,
     /// Detected wakeword template index.
     pub index: usize,
-    /// Detected features, only available on training mode
-    pub features: Option<Vec<Vec<f32>>>,
 }
 impl Clone for DetectedWakeword {
     fn clone(&self) -> Self {
@@ -1219,7 +1172,6 @@ impl Clone for DetectedWakeword {
             wakeword: self.wakeword.clone(),
             score: self.score,
             index: self.index,
-            features: self.features.as_ref().map(|features| features.to_vec()),
         }
     }
 }

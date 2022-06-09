@@ -42,9 +42,6 @@ impl WakewordModel {
     pub fn get_name(&self) -> &str {
         &self.name
     }
-    pub fn set_name(&mut self, name: &str) {
-        self.name = name.to_string();
-    }
 }
 #[derive(Clone)]
 pub struct WakewordTemplate {
@@ -134,10 +131,6 @@ impl Wakeword {
     }
     pub fn get_templates(&self) -> Vec<WakewordTemplate> {
         self.templates.clone()
-    }
-    pub fn add_template_features(&mut self, name: String, template: Vec<Vec<f32>>) {
-        self.templates.push(WakewordTemplate { name, template });
-        self.averaged_template = average_templates(&self.templates);
     }
     pub fn add_templates_features(&mut self, templates: Vec<(String, Vec<Vec<f32>>)>) {
         templates
