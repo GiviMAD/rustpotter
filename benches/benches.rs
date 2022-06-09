@@ -15,13 +15,13 @@ fn spot_wakewords(bench: &mut Bencher) {
     let dir = env!("CARGO_MANIFEST_DIR");
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
     let sample_2_path = dir.to_owned() + "/tests/resources/oye_casa_g_2.wav";
-    detector.add_wakeword(
+    detector.add_wakeword_with_wav_files(
         "hey home",
         true,
         None,
         None,
         vec![sample_1_path.clone(), sample_2_path.clone()],
-    );
+    ).unwrap();
     let mut audio_recreation: Vec<u8> = Vec::new();
 
     audio_recreation.append(&mut vec![0_u8; detector.get_bytes_per_frame() * 2]);

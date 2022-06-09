@@ -222,7 +222,7 @@ impl WakewordDetector {
     /// ```
     /// use rustpotter::{WakewordDetectorBuilder};
     /// let mut word_detector = WakewordDetectorBuilder::new().build();
-    /// word_detector.add_wakeword(
+    /// word_detector.add_wakeword_with_wav_files(
     ///     "model_name",
     ///     true,
     ///     Some(0.35),
@@ -232,14 +232,14 @@ impl WakewordDetector {
     /// // Save as model file
     /// // word_detector.generate_wakeword_model_file("model_name".to_owned(), "model_path".to_owned()).unwrap();
     /// ```
-    pub fn add_wakeword(
+    pub fn add_wakeword_with_wav_files(
         &mut self,
         name: &str,
         enabled: bool,
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
-        sample_paths: Vec<String>,
-    ) {
+        samples: Vec<String>,
+    ) -> Result<(), &str> {
         #[cfg(feature = "log")]
         debug!(
             "Adding wakeword \"{}\" (sample paths: {:?})",
@@ -251,19 +251,89 @@ impl WakewordDetector {
                 Wakeword::new(enabled, averaged_threshold, threshold),
             );
         }
-        let samples_features = sample_paths
+        let mut errors: Vec<std::result::Result<_, &str>> = vec![];
+        let samples_features = samples
             .iter()
-            .map(|path| (path, self.extract_features_from_file(path)))
-            .filter_map(|(path, result)| match result {
-                Ok(features) => Some((path.clone(), features.to_vec())),
-                Err(_msg) => {
-                    #[cfg(feature = "log")]
-                    // TODO: Return Error
-                    warn!("{}", _msg);
-                    None
+            .map(|path| {
+                let features_result = self.extract_features_from_wav_file(path);
+                if features_result.is_err() {
+                    Err("")
+                }else {
+                    Ok((name.to_string(), features_result.unwrap()))
                 }
             })
+            .filter_map(|r| r.map_err(|e| errors.push(Err(e))).ok())
             .collect::<Vec<_>>();
+            if errors.len()>0 {
+                return errors[0];
+            }
+            self.add_wakeword_with_features(name, enabled, averaged_threshold, threshold, samples_features)
+    }
+    /// Adds a wakeword using wav samples.
+    ///
+    /// ```
+    /// use rustpotter::{WakewordDetectorBuilder};
+    /// let mut word_detector = WakewordDetectorBuilder::new().build();
+    /// word_detector.add_wakeword_with_wav_buffers(
+    ///     "model_name",
+    ///     true,
+    ///     Some(0.35),
+    ///     Some(0.6),
+    ///     vec![],
+    /// );
+    /// // Save as model file
+    /// // word_detector.generate_wakeword_model_file("model_name".to_owned(), "model_path".to_owned()).unwrap();
+    /// ```
+    pub fn add_wakeword_with_wav_buffers(
+        &mut self,
+        name: &str,
+        enabled: bool,
+        averaged_threshold: Option<f32>,
+        threshold: Option<f32>,
+        samples: Vec<(String, Vec<u8>)>,
+    ) -> Result<(), &str> {
+        #[cfg(feature = "log")]
+        debug!(
+            "Adding wakeword \"{}\"",
+            name,
+        );
+        let mut errors: Vec<std::result::Result<_, &str>> = vec![];
+        let samples_features = samples
+            .iter()
+            .map(|(name, buffer)| {
+                let features_result = self.extract_features_from_wav_buffer(buffer.to_vec());
+                if features_result.is_err() {
+                    Err("")
+                }else {
+                    Ok((name.clone(), features_result.unwrap()))
+                }
+            })
+            .filter_map(|r| r.map_err(|e| errors.push(Err(e))).ok())
+            .collect::<Vec<_>>();
+            if errors.len()>0 {
+                return errors[0];
+            }
+            self.add_wakeword_with_features(name, enabled, averaged_threshold, threshold, samples_features)
+    }
+    fn add_wakeword_with_features(
+        &mut self,
+        name: &str,
+        enabled: bool,
+        averaged_threshold: Option<f32>,
+        threshold: Option<f32>,
+        samples_features: Vec<(String, Vec<Vec<f32>>)>,
+    ) -> Result<(), &str> {
+        #[cfg(feature = "log")]
+        debug!(
+            "Adding wakeword \"{}\" (sample paths: {:?})",
+            name, sample_paths
+        );
+        if self.wakewords.get_mut(name).is_none() {
+            self.wakewords.insert(
+                name.to_string(),
+                Wakeword::new(enabled, averaged_threshold, threshold),
+            );
+        }
         let word = self.wakewords.get_mut(name).unwrap();
         word.add_templates_features(samples_features.to_vec());
         let templates = word.get_templates().to_vec();
@@ -302,6 +372,7 @@ impl WakewordDetector {
                 );
             }
         });
+        Ok(())
     }
     /// Removes a wakeword by name.
     pub fn remove_wakeword(&mut self, name: &str) {
@@ -778,16 +849,23 @@ impl WakewordDetector {
         }
         detection
     }
-    fn extract_features_from_file(&mut self, file_path: &str) -> Result<Vec<Vec<f32>>, String> {
+    fn extract_features_from_wav_buffer(&mut self, buffer: Vec<u8>) -> Result<Vec<Vec<f32>>, &str> {
+        let buf_reader = BufReader::new(buffer.as_slice());
+        self.extract_features_from_wav_buffer_reader(buf_reader)
+    }
+    fn extract_features_from_wav_file(&mut self, file_path: &str) -> Result<Vec<Vec<f32>>, &str> {
         let path = Path::new(file_path);
         if !path.exists() || !path.is_file() {
             #[cfg(feature = "log")]
             warn!("File \"{}\" not found!", file_path);
-            return Err("Can not read file".to_string());
+            return Err("Can not read file");
         }
-
-        let in_file = BufReader::new(File::open(file_path).map_err(|err| err.to_string())?);
-        let wav_reader = WavReader::new(in_file).map_err(|err| err.to_string())?;
+        
+        let buf_reader = BufReader::new(File::open(file_path).map_err(|_| "File path not found")?);
+        self.extract_features_from_wav_buffer_reader(buf_reader)
+    }
+    fn extract_features_from_wav_buffer_reader<R: std::io::Read>(&mut self, buf_reader: BufReader<R>) -> Result<Vec<Vec<f32>>, &str> {
+        let wav_reader = WavReader::new(buf_reader).map_err(|_| "Invalid wav buffer provided")?;
         let sample_rate = wav_reader.spec().sample_rate;
         let sample_format = wav_reader.spec().sample_format;
         let bits_per_sample = wav_reader.spec().bits_per_sample;

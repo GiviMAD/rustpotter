@@ -51,7 +51,7 @@ fn it_can_add_wakeword_from_samples() {
         dir.to_owned() + "/tests/resources/oye_casa_g_5.wav",
     ];
     let mut detector = WakewordDetectorBuilder::new().build();
-    detector.add_wakeword("oye casa", true, None, None, samples);
+    detector.add_wakeword_with_wav_files("oye casa", true, None, None, samples).unwrap();
     detector
         .generate_wakeword_model_file(
             "oye casa".to_owned(),
@@ -102,13 +102,13 @@ fn can_spot_wakewords_with_silence_frames_test_impl(
     let dir = env!("CARGO_MANIFEST_DIR");
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
     let sample_2_path = dir.to_owned() + "/tests/resources/oye_casa_g_2.wav";
-    detector.add_wakeword(
+    detector.add_wakeword_with_wav_files(
         "hey home",
         true,
         Some(0.3),
         Some(0.67),
         vec![sample_1_path.clone(), sample_2_path.clone()],
-    );
+    ).unwrap();
     let mut audio_recreation: Vec<u8> = Vec::new();
     audio_recreation.append(&mut vec![
         0_u8;
