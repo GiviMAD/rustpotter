@@ -104,14 +104,14 @@ impl Wakeword {
             .iter()
             .map(|item| item.template.len())
             .min()
-            .expect("Unable to get min frames for wakeword")
+            .unwrap_or(9999)
     }
     pub fn get_max_frames(&self) -> usize {
         self.get_templates()
             .iter()
             .map(|item| item.template.len())
             .max()
-            .expect("Unable to get min frames for wakeword")
+            .unwrap_or(0)
     }
     pub fn is_enabled(&self) -> bool {
         self.enabled

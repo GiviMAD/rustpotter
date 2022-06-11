@@ -8,7 +8,7 @@ use rubato::{FftFixedInOut, Resampler};
 use savefile::{load_file, load_from_mem, save_file, save_to_mem};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Error, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -190,9 +190,9 @@ impl WakewordDetector {
         &mut self,
         bytes: Vec<u8>,
         enabled: bool,
-    ) -> Result<String, String> {
+    ) -> Result<String, Error> {
         let model: WakewordModel =
-            load_from_mem(&bytes, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
+            load_from_mem(&bytes, WAKEWORD_MODEL_VERSION).or(Err(Error::new(ErrorKind::InvalidInput,"Invalid model bytes")))?;
         self.add_wakeword_from_model(model, enabled)
     }
     /// Loads a wakeword from its model path.
@@ -200,22 +200,22 @@ impl WakewordDetector {
         &mut self,
         path: String,
         enabled: bool,
-    ) -> Result<String, String> {
+    ) -> Result<String, Error> {
         let model: WakewordModel =
-            load_file(path, WAKEWORD_MODEL_VERSION).or(Err("Unable to load model data"))?;
+            load_file(&path, WAKEWORD_MODEL_VERSION).or(Err(Error::new(ErrorKind::InvalidInput,"Invalid model file: ".to_owned() + &path)))?;
         self.add_wakeword_from_model(model, enabled)
     }
     /// Generates the model file bytes from a loaded a wakeword.
-    pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, String> {
+    pub fn generate_wakeword_model_bytes(&self, name: String) -> Result<Vec<u8>, Error> {
         let model = self.get_wakeword_model(&name)?;
         save_to_mem(WAKEWORD_MODEL_VERSION, &model)
-            .map_err(|_| String::from("Unable to generate model bytes"))
+            .map_err(|_| Error::new(ErrorKind::InvalidInput,"Unable to generate model bytes"))
     }
     /// Generates a model file from a loaded a wakeword on the desired path.
-    pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), String> {
+    pub fn generate_wakeword_model_file(&self, name: String, path: String) -> Result<(), Error> {
         let model = self.get_wakeword_model(&name)?;
         save_file(path, WAKEWORD_MODEL_VERSION, &model)
-            .map_err(|_| String::from("Unable to generate file"))
+            .map_err(|_| Error::new(ErrorKind::InvalidInput,"Unable to generate model file."))
     }
     /// Adds a wakeword using wav samples.
     ///
@@ -228,7 +228,7 @@ impl WakewordDetector {
     ///     Some(0.35),
     ///     Some(0.6),
     ///     vec![],
-    /// );
+    /// ).unwrap();
     /// // Save as model file
     /// // word_detector.generate_wakeword_model_file("model_name".to_owned(), "model_path".to_owned()).unwrap();
     /// ```
@@ -239,11 +239,11 @@ impl WakewordDetector {
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
         samples: Vec<String>,
-    ) -> Result<(), &str> {
+    ) -> Result<(), Error> {
         #[cfg(feature = "log")]
         debug!(
             "Adding wakeword \"{}\" (sample paths: {:?})",
-            name, sample_paths
+            name, samples
         );
         if self.wakewords.get_mut(name).is_none() {
             self.wakewords.insert(
@@ -251,7 +251,7 @@ impl WakewordDetector {
                 Wakeword::new(enabled, averaged_threshold, threshold),
             );
         }
-        let mut errors: Vec<std::result::Result<_, &str>> = vec![];
+        let mut errors: Vec<Result<(), Error>> = Vec::new();
         let samples_features = samples
             .iter()
             .map(|path| {
@@ -259,13 +259,14 @@ impl WakewordDetector {
                 if let Ok(features) = features_result {
                     Ok((name.to_string(), features))
                 }else {
-                    Err("Unable to extract features from file")
+                    Err(features_result.unwrap_err())
                 }
             })
             .filter_map(|r| r.map_err(|e| errors.push(Err(e))).ok())
             .collect::<Vec<_>>();
             if !errors.is_empty() {
-                return errors[0];
+                let error: Result<(), Error> = errors.drain(0..=0).collect();
+                return Err(error.unwrap_err());
             }
             self.add_wakeword_with_features(name, enabled, averaged_threshold, threshold, samples_features)
     }
@@ -291,13 +292,13 @@ impl WakewordDetector {
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
         samples: Vec<(String, Vec<u8>)>,
-    ) -> Result<(), &str> {
+    ) -> Result<(), Error> {
         #[cfg(feature = "log")]
         debug!(
             "Adding wakeword \"{}\"",
             name,
         );
-        let mut errors: Vec<std::result::Result<_, &str>> = vec![];
+        let mut errors: Vec<std::result::Result<_, Error>> = vec![];
         let samples_features = samples
             .iter()
             .map(|(name, buffer)| {
@@ -305,13 +306,14 @@ impl WakewordDetector {
                 if let Ok(features) = features_result {
                     Ok((name.to_string(), features))
                 }else {
-                    Err("Unable to extract features from buffer.")
+                    Err(features_result.unwrap_err())
                 }
             })
             .filter_map(|r| r.map_err(|e| errors.push(Err(e))).ok())
             .collect::<Vec<_>>();
             if !errors.is_empty() {
-                return errors[0];
+                let error: Result<(), Error> = errors.drain(0..=0).collect();
+                return Err(error.unwrap_err());
             }
             self.add_wakeword_with_features(name, enabled, averaged_threshold, threshold, samples_features)
     }
@@ -322,12 +324,7 @@ impl WakewordDetector {
         averaged_threshold: Option<f32>,
         threshold: Option<f32>,
         samples_features: Vec<(String, Vec<Vec<f32>>)>,
-    ) -> Result<(), &str> {
-        #[cfg(feature = "log")]
-        debug!(
-            "Adding wakeword \"{}\" (sample paths: {:?})",
-            name, sample_paths
-        );
+    ) -> Result<(), Error> {
         if self.wakewords.get_mut(name).is_none() {
             self.wakewords.insert(
                 name.to_string(),
@@ -433,7 +430,7 @@ impl WakewordDetector {
                                 i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                             }
                             _default => {
-                                panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                                0
                             }
                         }}).collect::<Vec<i32>>(),
                         Endianness::Big => buffer_chunks.map(|bytes| {
@@ -451,7 +448,7 @@ impl WakewordDetector {
                                     i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                                 }
                                 _default => {
-                                    panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                                    0
                                 }
                             }}).collect::<Vec<i32>>(),
                         Endianness::Native =>  buffer_chunks.map(|bytes| {
@@ -469,7 +466,7 @@ impl WakewordDetector {
                                     i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                                 }
                                 _default => {
-                                    panic!("Unsupported bits_per_sample configuration only 8, 16, 24 and 32 are allowed for int format")
+                                    0
                                 }
                             }}).collect::<Vec<i32>>(),
                 };
@@ -486,7 +483,7 @@ impl WakewordDetector {
                                 f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                             }
                             _default => {
-                                panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
+                                0.
                             }
                         }
                     }).collect::<Vec<f32>>(),
@@ -498,7 +495,7 @@ impl WakewordDetector {
                                 f32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                             }
                             _default => {
-                                panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
+                                0.
                             }
                         }
                     }).collect::<Vec<f32>>(),
@@ -510,7 +507,7 @@ impl WakewordDetector {
                                 f32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                             }
                             _default => {
-                                panic!("Unsupported bits_per_sample configuration only 32 is allowed for float format")
+                                0.
                             }
                         }
                     }).collect::<Vec<f32>>(),
@@ -636,7 +633,7 @@ impl WakewordDetector {
         &mut self,
         model: WakewordModel,
         enabled: bool,
-    ) -> Result<String, String> {
+    ) -> Result<String, Error> {
         let wakeword_name = String::from(model.get_name());
         let wakeword = Wakeword::from_model(model, enabled);
         self.wakewords.insert(wakeword_name.clone(), wakeword);
@@ -661,13 +658,11 @@ impl WakewordDetector {
         self.min_frames = min_frames;
         self.max_frames = max_frames;
     }
-    fn get_wakeword_model(&self, name: &str) -> Result<WakewordModel, &str> {
-        let wakeword_option = self.wakewords.get(name);
-        if let Some(wakeword) = wakeword_option {
-            let model = WakewordModel::from_wakeword(name, wakeword);
-            Ok(model)
+    fn get_wakeword_model(&self, name: &str) -> Result<WakewordModel, Error> {
+        if let Some(wakeword) = self.wakewords.get(name) {
+            Ok(WakewordModel::from_wakeword(name, wakeword))
         } else {
-            Err("Missing wakeword")
+            Err(Error::new(ErrorKind::NotFound, "Missing wakeword"))
         }
     }
     fn process_int(&mut self, audio_chunk: &[i32]) -> Option<DetectedWakeword> {
@@ -849,23 +844,23 @@ impl WakewordDetector {
         }
         detection
     }
-    fn extract_features_from_wav_buffer(&mut self, buffer: Vec<u8>) -> Result<Vec<Vec<f32>>, &str> {
+    fn extract_features_from_wav_buffer(&mut self, buffer: Vec<u8>) -> Result<Vec<Vec<f32>>, Error> {
         let buf_reader = BufReader::new(buffer.as_slice());
         self.extract_features_from_wav_buffer_reader(buf_reader)
     }
-    fn extract_features_from_wav_file(&mut self, file_path: &str) -> Result<Vec<Vec<f32>>, &str> {
+    fn extract_features_from_wav_file(&mut self, file_path: &str) -> Result<Vec<Vec<f32>>, Error> {
         let path = Path::new(file_path);
         if !path.exists() || !path.is_file() {
             #[cfg(feature = "log")]
             warn!("File \"{}\" not found!", file_path);
-            return Err("Can not read file");
+            return Err(Error::new(ErrorKind::NotFound, "File not found: ".to_owned() + file_path))
         }
-        
-        let buf_reader = BufReader::new(File::open(file_path).map_err(|_| "File path not found")?);
+        let file = File::open(file_path).map_err(|_| Error::new(ErrorKind::NotFound, "Can not open file: ".to_owned() + file_path))?;
+        let buf_reader = BufReader::new(file);
         self.extract_features_from_wav_buffer_reader(buf_reader)
     }
-    fn extract_features_from_wav_buffer_reader<R: std::io::Read>(&mut self, buf_reader: BufReader<R>) -> Result<Vec<Vec<f32>>, &str> {
-        let wav_reader = WavReader::new(buf_reader).map_err(|_| "Invalid wav buffer provided")?;
+    fn extract_features_from_wav_buffer_reader<R: std::io::Read>(&mut self, buf_reader: BufReader<R>) -> Result<Vec<Vec<f32>>, Error> {
+        let wav_reader = WavReader::new(buf_reader).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid wav data provided."))?;
         let sample_rate = wav_reader.spec().sample_rate;
         let sample_format = wav_reader.spec().sample_format;
         let bits_per_sample = wav_reader.spec().bits_per_sample;

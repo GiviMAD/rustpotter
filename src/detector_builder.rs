@@ -1,6 +1,8 @@
-use crate::{SampleFormat, Endianness, NoiseDetectionMode, WakewordDetector, detector::INTERNAL_SAMPLE_RATE};
 #[cfg(feature = "vad")]
 use crate::VadMode;
+use crate::{
+    detector::INTERNAL_SAMPLE_RATE, Endianness, NoiseDetectionMode, SampleFormat, WakewordDetector,
+};
 
 /// Use this struct to configure and build your wakeword detector.
 /// ```
@@ -108,11 +110,15 @@ impl WakewordDetectorBuilder {
     }
     /// Configures the detector expected bit per sample for the audio chunks to process.
     ///
+    /// When sample format is set to 'float' this is ignored as only 32 is supported.
+    ///
     /// Defaults to 16; Allowed values: 8, 16, 24, 32
     pub fn set_bits_per_sample(&mut self, value: u16) -> &mut Self {
-        if 8 == value || 16 == value || 24 == value || 32 == value {
-            self.bits_per_sample = Some(value);
-        }
+        assert!(
+            8 == value || 16 == value || 24 == value || 32 == value,
+            "Allowed values are 8, 16, 24 and 32"
+        );
+        self.bits_per_sample = Some(value);
         self
     }
     /// Configures the detector expected sample rate for the audio chunks to process.
@@ -238,7 +244,11 @@ impl WakewordDetectorBuilder {
         self.sample_format.unwrap_or(SampleFormat::Int)
     }
     fn get_bits_per_sample(&self) -> u16 {
-        self.bits_per_sample.unwrap_or(16)
+        if self.get_sample_format() == SampleFormat::Float {
+            32
+        } else {
+            self.bits_per_sample.unwrap_or(16)
+        }
     }
     fn get_channels(&self) -> u16 {
         self.channels.unwrap_or(1)
