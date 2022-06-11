@@ -256,15 +256,15 @@ impl WakewordDetector {
             .iter()
             .map(|path| {
                 let features_result = self.extract_features_from_wav_file(path);
-                if features_result.is_err() {
-                    Err("")
+                if let Ok(features) = features_result {
+                    Ok((name.to_string(), features))
                 }else {
-                    Ok((name.to_string(), features_result.unwrap()))
+                    Err("Unable to extract features from file")
                 }
             })
             .filter_map(|r| r.map_err(|e| errors.push(Err(e))).ok())
             .collect::<Vec<_>>();
-            if errors.len()>0 {
+            if !errors.is_empty() {
                 return errors[0];
             }
             self.add_wakeword_with_features(name, enabled, averaged_threshold, threshold, samples_features)
@@ -302,15 +302,15 @@ impl WakewordDetector {
             .iter()
             .map(|(name, buffer)| {
                 let features_result = self.extract_features_from_wav_buffer(buffer.to_vec());
-                if features_result.is_err() {
-                    Err("")
+                if let Ok(features) = features_result {
+                    Ok((name.to_string(), features))
                 }else {
-                    Ok((name.clone(), features_result.unwrap()))
+                    Err("Unable to extract features from buffer.")
                 }
             })
             .filter_map(|r| r.map_err(|e| errors.push(Err(e))).ok())
             .collect::<Vec<_>>();
-            if errors.len()>0 {
+            if !errors.is_empty() {
                 return errors[0];
             }
             self.add_wakeword_with_features(name, enabled, averaged_threshold, threshold, samples_features)
