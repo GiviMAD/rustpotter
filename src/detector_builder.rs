@@ -165,8 +165,8 @@ impl WakewordDetectorBuilder {
         self
     }
     /// Enables eager mode.
-    /// Terminate the detection as son as one result is above the score,
-    /// instead of wait to see if the next frame has a higher score.
+    /// End detection as soon as a result is over the score, instead of
+    /// waiting to see if the next frame has a higher score.
     ///
     /// Recommended for real usage.
     ///
@@ -196,7 +196,7 @@ impl WakewordDetectorBuilder {
         self
     }
     /// Use build-in noise detection to reduce computation on absence of noise.
-    /// Configures how difficult is to considering a frame as noise (the required noise lever)
+    /// Configures how difficult is to considering a frame as noise (the required noise level)
     /// Unless specified the noise detection is disabled.
     pub fn set_noise_mode(&mut self, value: NoiseDetectionMode) -> &mut Self {
         self.noise_mode = Some(value);
@@ -213,7 +213,7 @@ impl WakewordDetectorBuilder {
         self
     }
     #[cfg(feature = "vad")]
-    /// Voice/silence ratio in the last second to consider voice detected.
+    /// Voice/silence ratio in the last second to consider voice is detected.
     ///
     /// Defaults to 0.5.
     ///

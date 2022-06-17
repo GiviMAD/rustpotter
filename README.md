@@ -6,32 +6,29 @@
     <img src="./logo.png?raw=true" width="400px"</img> 
 </div>
 
-## Warning!
-
-This project is under active development and testing, api and model format are broken usually, consider rustpotter and all the related projects in beta until version 1.0.0 is published.
-
-But don't hesitate to report any issues in the meantime.
 
 ## Description
 
 This project allows to detect specific wake words on a live audio stream.
 
- To do so it generates a set of features from some audio samples to later compare them with the features generated from the live stream, to calculate the probability of a match.
+ To do so it generates a set of features from some audio samples to later compare them with the features generated from a live stream, to calculate the probability of a match.
 
-The features can be loaded from a previous generated model file or extracted from the samples before start the live streaming.
+The features can be loaded from a previous generated model file or extracted from the samples before starting to process the live streaming.
 
 ## Web Demo
 
- This [web demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly try out Rustpotter using a web browser
+ This [web demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly try out Rustpotter using a web browser.
 
- It includes some models generated using multiple voices from a text-to-speech service, 
- you can also load your own ones.
+ It includes some models generated using multiple voices from a text-to-speech service.
+ You can also load your own ones.
+
+Please note that the audio processing runs entirely on your browser, your voice is not sent anywhere.
 
 ## Audio Format
 
 This project uses wav, it works internally with the spec 48000hz 16 bit 1 channel int, but allows to configure the detector to work with other specs.
 
-The detector configuration is ignored when adding a keyword with samples (`add_wakeword` method) as the wav spec is read from each file header (so raw samples are not allowed).
+The detector configuration is ignored when adding a keyword with samples as the wav spec is read from each file header (so raw samples are not allowed).
 
 ## Related projects
 
@@ -43,7 +40,9 @@ The detector configuration is ignored when adding a keyword with samples (`add_w
 
 ## Versioning
 
-All related packages use the version number of the rustpotter dependency (PATCH number could defer) so models generated with some version of the cli should work with other packages on the same version.
+Rustpotter versions prior to v1.0.0 are not recommended, model compatibility was broken frequently.
+
+Since 1.0.0 it will stick to [semver](https://semver.org), and a model compatibly break will be  marked by a MAJOR version change, same will apply for related packages (cli, wasm-wrapper, java-wrapper...).
 
 ## Some examples:
 
@@ -100,7 +99,7 @@ This project started as a port of the project [node-personal-wakeword](https://g
 ### Motivation
 
 The motivation behind this project is to learn about audio analysis and Rust.
-Also to have access to an open source personal wakeword spotter to use in other open projects.
+Also to have access to an open source wakeword spotter to use in other open projects.
 
-Feel free to suggest any improvements or fixes.
+Feel encourage to suggest any improvements or fixes.
 

@@ -405,9 +405,7 @@ impl WakewordDetector {
     ///
     /// Assumes sample rate match the configured for the detector.
     ///
-    /// Assumes little endian order on the buffer.
-    ///
-    /// Asserts that detector bits_per_sample is 8, 16, 24 or 32 (float format only allows 32).
+    /// Assumes buffer endianness matches the configured for the detector.
     ///
     pub fn process_buffer(&mut self, audio_buffer: &[u8]) -> Option<DetectedWakeword> {
         assert!(audio_buffer.len() == self.get_bytes_per_frame());
