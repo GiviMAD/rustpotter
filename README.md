@@ -14,12 +14,14 @@ This project allows to detect specific wake words on a live audio stream.
 
 The features can be loaded from a previous generated model file or extracted from the samples before starting to process the live streaming.
 
-## Web Demo
+## Web Demos
 
- This [web demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly try out Rustpotter using a web browser.
+ This [spot demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly try out Rustpotter using a web browser.
 
  It includes some models generated using multiple voices from a text-to-speech service.
  You can also load your own ones.
+
+ This [model generator demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly generate rustpotter models using your own voice.
 
 Please note that the audio processing runs entirely on your browser, your voice is not sent anywhere.
 
