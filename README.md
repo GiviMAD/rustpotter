@@ -21,7 +21,7 @@ The features can be loaded from a previous generated model file or extracted fro
  It includes some models generated using multiple voices from a text-to-speech service.
  You can also load your own ones.
 
- This [model generator demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly generate rustpotter models using your own voice.
+ This [model generator demo](https://givimad.github.io/rustpotter-create-model-demo/) is available so you can quickly generate rustpotter models using your own voice.
 
 Please note that the audio processing runs entirely on your browser, your voice is not sent anywhere.
 
