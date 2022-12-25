@@ -10,6 +10,7 @@ pub struct Dtw<T: Copy> {
     distance_cost_matrix: Option<Matrix<f32>>,
 }
 impl<T: Copy> Dtw<T> {
+    #[cfg(feature = "build")]
     pub fn compute_optimal_path(&mut self, first_sequence: &[T], second_sequence: &[T]) -> f32 {
         self.state_m = first_sequence.len();
         self.state_n = second_sequence.len();
@@ -135,6 +136,7 @@ impl<T: Copy> Dtw<T> {
         self.state_similarity = Option::Some(similarity);
         similarity
     }
+    #[cfg(feature = "build")]
     pub fn retrieve_optimal_path(&self) -> Option<Vec<[usize; 2]>> {
         self.distance_cost_matrix.as_ref()?;
         let distance_cost_matrix = self.distance_cost_matrix.as_ref().unwrap();

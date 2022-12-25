@@ -1,4 +1,6 @@
+#[cfg(feature = "build")]
 use crate::comparator;
+#[cfg(feature = "build")]
 use crate::dtw;
 
 pub const WAKEWORD_MODEL_VERSION: u32 = 0;
@@ -11,6 +13,7 @@ pub struct WakewordModel {
     templates: Vec<(String, Vec<Vec<f32>>)>,
 }
 impl WakewordModel {
+    #[cfg(feature = "build")]
     pub fn new(
         name: &str,
         averaged_template: Option<Vec<Vec<f32>>>,
@@ -22,13 +25,14 @@ impl WakewordModel {
             name: String::from(name),
             templates: templates
                 .into_iter()
-                .map(|item| (item.name, item.template))
+                .map(|item| (item._name, item.template))
                 .collect(),
             averaged_template,
             averaged_threshold,
             threshold,
         }
     }
+    #[cfg(feature = "build")]
     pub fn from_wakeword(name: &str, wakeword: &Wakeword) -> Self {
         WakewordModel::new(
             name,
@@ -45,13 +49,13 @@ impl WakewordModel {
 }
 #[derive(Clone)]
 pub struct WakewordTemplate {
-    name: String,
+    _name: String,
     template: Vec<Vec<f32>>,
 }
 
 impl WakewordTemplate {
     pub fn _get_name(&self) -> &str {
-        &self.name
+        &self._name
     }
     pub fn get_template(&self) -> &[Vec<f32>] {
         &self.template
@@ -71,13 +75,14 @@ impl Wakeword {
             templates: model
                 .templates
                 .into_iter()
-                .map(|(name, template)| WakewordTemplate { name, template })
+                .map(|(name, template)| WakewordTemplate { _name: name, template })
                 .collect(),
             enabled,
             threshold: model.threshold,
             averaged_threshold: model.averaged_threshold,
         }
     }
+    #[cfg(feature = "build")]
     pub fn new(enabled: bool, averaged_threshold: Option<f32>, threshold: Option<f32>) -> Wakeword {
         Wakeword {
             enabled,
@@ -132,10 +137,11 @@ impl Wakeword {
     pub fn get_templates(&self) -> Vec<WakewordTemplate> {
         self.templates.clone()
     }
+    #[cfg(feature = "build")]
     pub fn add_templates_features(&mut self, templates: Vec<(String, Vec<Vec<f32>>)>) {
         templates
             .into_iter()
-            .for_each(|(name, template)| self.templates.push(WakewordTemplate { name, template }));
+            .for_each(|(name, template)| self.templates.push(WakewordTemplate { _name: name, template }));
         self.averaged_template = average_templates(&self.templates);
     }
     pub fn prioritize_template(&mut self, index: usize) {
@@ -143,6 +149,7 @@ impl Wakeword {
         self.templates.swap(index, 0);
     }
 }
+#[cfg(feature = "build")]
 fn average_templates(templates: &[WakewordTemplate]) -> Option<Vec<Vec<f32>>> {
     if templates.len() <= 1 {
         return None;

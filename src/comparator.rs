@@ -41,7 +41,7 @@ pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {
         dot_b += component_b * component_b;
         dimension += 1;
     }
-    let magnitude = f32::sqrt((dot_a * dot_b) as f32) as f32;
+    let magnitude = f32::sqrt(dot_a * dot_b);
     if magnitude == 0. {
         0.
     } else {

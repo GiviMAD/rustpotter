@@ -1,7 +1,11 @@
 #[cfg(feature = "vad")]
-use crate::VadMode;
 use crate::{
-    detector::INTERNAL_SAMPLE_RATE, Endianness, NoiseDetectionMode, SampleFormat, WakewordDetector,
+    detector::{VadOptions},
+    VadMode
+};
+use crate::{
+    detector::{ComparatorOptions, DetectionOptions, WavOptions, INTERNAL_SAMPLE_RATE},
+    Endianness, NoiseDetectionMode, SampleFormat, WakewordDetector,
 };
 
 /// Use this struct to configure and build your wakeword detector.
@@ -64,25 +68,27 @@ impl WakewordDetectorBuilder {
     /// construct the wakeword detector
     pub fn build(&self) -> WakewordDetector {
         WakewordDetector::new(
-            self.get_sample_rate(),
-            self.get_sample_format(),
-            self.get_bits_per_sample(),
-            self.get_channels(),
-            self.get_endianness(),
-            self.get_eager_mode(),
-            self.get_single_thread(),
-            self.get_threshold(),
-            self.get_averaged_threshold(),
-            self.get_comparator_band_size(),
-            self.get_comparator_ref(),
+            WavOptions {
+                sample_rate: self.get_sample_rate(),
+                sample_format: self.get_sample_format(),
+                bits_per_sample: self.get_bits_per_sample(),
+                channels: self.get_channels(),
+                endianness: self.get_endianness(),
+            },
+            DetectionOptions {
+                eager_mode: self.get_eager_mode(),
+                single_thread: self.get_single_thread(),
+                threshold: self.get_threshold(),
+                averaged_threshold: self.get_averaged_threshold(),
+            },
+            ComparatorOptions {
+                band_size: self.get_comparator_band_size(),
+                reference: self.get_comparator_ref(),
+            },
             self.get_noise_mode(),
             self.get_noise_sensitivity(),
             #[cfg(feature = "vad")]
-            self.get_vad_mode(),
-            #[cfg(feature = "vad")]
-            self.get_vad_delay(),
-            #[cfg(feature = "vad")]
-            self.get_vad_sensitivity(),
+            self.get_vad_mode().map(|vad_mode| VadOptions { vad_mode, vad_delay: self.get_vad_delay(), vad_sensitivity: self.get_vad_sensitivity() }),
         )
     }
     /// Configures the detector threshold,

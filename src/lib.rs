@@ -4,6 +4,7 @@ extern crate savefile;
 extern crate savefile_derive;
 
 mod comparator;
+mod utils;
 mod detector;
 mod detector_builder;
 mod dtw;

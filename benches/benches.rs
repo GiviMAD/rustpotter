@@ -32,7 +32,7 @@ fn spot_wakewords(bench: &mut Bencher) {
     audio_recreation.append(&mut sample_2_bytes);
     audio_recreation.append(&mut vec![0_u8; detector.get_bytes_per_frame() * 2]);
     bench.iter(|| {
-        let _detections = audio_recreation
+        audio_recreation
             .chunks_exact(detector.get_bytes_per_frame())
             .for_each(|audio_buffer| {
                 detector.process_buffer(audio_buffer);

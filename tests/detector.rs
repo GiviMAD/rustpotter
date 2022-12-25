@@ -4,6 +4,7 @@ use std::{
 };
 static INIT_LOGGER: std::sync::Once = std::sync::Once::new();
 
+use log::info;
 use rustpotter::WakewordDetectorBuilder;
 
 pub fn enable_rustpotter_log() {
@@ -131,6 +132,9 @@ fn can_spot_wakewords_with_silence_frames_test_impl(
         .filter_map(|audio_buffer| detector.process_buffer(audio_buffer))
         .collect::<Vec<_>>();
     assert_eq!(detections.len(), 2);
+    for det in detections {
+        info!("detection {}", det.score);
+    }
 }
 fn read_wav_buffer(f: File) -> Vec<u8> {
     let mut reader = BufReader::new(f);

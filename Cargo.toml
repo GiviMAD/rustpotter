@@ -1,6 +1,6 @@
 [package]
 name = "rustpotter"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "An open source wake word spotter forged in rust."
@@ -24,9 +24,11 @@ log = "0.4.6"
 bencher = "0.1.5"
 
 [features]
-default = []
+default = ["build", "files"]
 log = ["dep:log"]
 vad = ["dep:webrtc-vad"]
+build = []
+files = []
 
 [[bench]]
 name = "benches"
