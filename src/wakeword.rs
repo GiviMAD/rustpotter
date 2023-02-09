@@ -1,166 +1,187 @@
-#[cfg(feature = "build")]
-use crate::comparator;
-#[cfg(feature = "build")]
-use crate::dtw;
+use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
-pub const WAKEWORD_MODEL_VERSION: u32 = 0;
-#[derive(Savefile)]
-pub struct WakewordModel {
-    name: String,
-    threshold: Option<f32>,
-    averaged_threshold: Option<f32>,
-    averaged_template: Option<Vec<Vec<f32>>>,
-    templates: Vec<(String, Vec<Vec<f32>>)>,
-}
-impl WakewordModel {
-    #[cfg(feature = "build")]
-    pub fn new(
-        name: &str,
-        averaged_template: Option<Vec<Vec<f32>>>,
-        templates: Vec<WakewordTemplate>,
-        averaged_threshold: Option<f32>,
-        threshold: Option<f32>,
-    ) -> Self {
-        WakewordModel {
-            name: String::from(name),
-            templates: templates
-                .into_iter()
-                .map(|item| (item._name, item.template))
-                .collect(),
-            averaged_template,
-            averaged_threshold,
-            threshold,
-        }
-    }
-    #[cfg(feature = "build")]
-    pub fn from_wakeword(name: &str, wakeword: &Wakeword) -> Self {
-        WakewordModel::new(
-            name,
-            wakeword.get_averaged_template(),
-            wakeword.get_templates(),
-            wakeword.get_averaged_threshold(),
-            wakeword.get_threshold(),
-        )
-    }
+use ciborium::{de, ser};
+use hound::WavReader;
 
-    pub fn get_name(&self) -> &str {
-        &self.name
-    }
-}
-#[derive(Clone)]
-pub struct WakewordTemplate {
-    _name: String,
-    template: Vec<Vec<f32>>,
-}
-
-impl WakewordTemplate {
-    pub fn _get_name(&self) -> &str {
-        &self._name
-    }
-    pub fn get_template(&self) -> &[Vec<f32>] {
-        &self.template
-    }
-}
+use crate::{
+    internal::{Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, WAVEncoder},
+    Endianness, WavFmt, DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
+    FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
+    FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
+};
+use serde::{Deserialize, Serialize};
+#[derive(Serialize, Deserialize)]
 pub struct Wakeword {
-    averaged_template: Option<Vec<Vec<f32>>>,
-    templates: Vec<WakewordTemplate>,
-    enabled: bool,
-    threshold: Option<f32>,
-    averaged_threshold: Option<f32>,
+    pub name: String,
+    pub avg_features: Option<Vec<Vec<f32>>>,
+    pub samples_features: HashMap<String, Vec<Vec<f32>>>,
+    pub threshold: Option<f32>,
+    pub avg_threshold: Option<f32>,
+    pub enabled: bool,
 }
 impl Wakeword {
-    pub fn from_model(model: WakewordModel, enabled: bool) -> Wakeword {
-        Wakeword {
-            averaged_template: model.averaged_template,
-            templates: model
-                .templates
-                .into_iter()
-                .map(|(name, template)| WakewordTemplate { _name: name, template })
-                .collect(),
-            enabled,
-            threshold: model.threshold,
-            averaged_threshold: model.averaged_threshold,
-        }
+    pub fn save_to_file(&self, path: &str) -> Result<(), String> {
+        let mut file = match File::create(path) {
+            Ok(it) => it,
+            Err(err) => {
+                return Err(String::from(
+                    "Unable to open file ".to_owned() + path + ": " + &err.to_string(),
+                ))
+            }
+        };
+        ser::into_writer(self, &mut file).map_err(|err| err.to_string())?;
+        Ok(())
     }
-    #[cfg(feature = "build")]
-    pub fn new(enabled: bool, averaged_threshold: Option<f32>, threshold: Option<f32>) -> Wakeword {
-        Wakeword {
-            enabled,
+    pub fn save_to_buffer(&self) -> Result<Vec<u8>, String> {
+        let mut bytes: Vec<u8> = Vec::new();
+        ser::into_writer(self, &mut bytes).map_err(|err| err.to_string())?;
+        Ok(bytes)
+    }
+    pub fn load_from_file(path: &str) -> Result<Wakeword, String> {
+        let file = match File::open(path) {
+            Ok(it) => it,
+            Err(err) => {
+                return Err(String::from(
+                    "Unable to open file ".to_owned() + path + ": " + &err.to_string(),
+                ))
+            }
+        };
+        let reader = BufReader::new(file);
+        let wakeword: Wakeword = de::from_reader(reader).map_err(|err| err.to_string())?;
+        Ok(wakeword)
+    }
+    pub fn load_from_buffer(buffer: &[u8]) -> Result<Wakeword, String> {
+        let reader = BufReader::new(buffer);
+        let wakeword: Wakeword = de::from_reader(reader).map_err(|err| err.to_string())?;
+        Ok(wakeword)
+    }
+    pub fn new(
+        name: String,
+        threshold: Option<f32>,
+        avg_threshold: Option<f32>,
+        avg_features: Option<Vec<Vec<f32>>>,
+        samples_features: HashMap<String, Vec<Vec<f32>>>,
+    ) -> Result<Wakeword, String> {
+        Ok(Wakeword {
+            name,
             threshold,
-            averaged_threshold: if averaged_threshold.is_some() {
-                averaged_threshold
-            } else if threshold.is_some() {
-                Some(threshold.unwrap() / 2.)
-            } else {
-                None
-            },
-            templates: Vec::new(),
-            averaged_template: None,
+            avg_threshold,
+            avg_features,
+            samples_features,
+            enabled: true,
+        })
+    }
+    pub fn new_from_sample_buffers(
+        name: String,
+        threshold: Option<f32>,
+        averaged_threshold: Option<f32>,
+        samples: HashMap<String, Vec<u8>>,
+    ) -> Result<Wakeword, String> {
+        let mut samples_data: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+        for (key, buffer) in samples {
+            samples_data.insert(
+                key,
+                compute_sample_features(BufReader::new(buffer.as_slice()))?,
+            );
         }
+        Wakeword::new(
+            name,
+            threshold,
+            averaged_threshold,
+            compute_avg_samples_features(&samples_data),
+            samples_data,
+        )
     }
-    pub fn set_threshold(&mut self, threshold: f32) {
-        self.threshold = Some(threshold);
-    }
-    pub fn set_averaged_threshold(&mut self, averaged_threshold: f32) {
-        self.averaged_threshold = Some(averaged_threshold);
-    }
-    pub fn get_min_frames(&self) -> usize {
-        self.get_templates()
-            .iter()
-            .map(|item| item.template.len())
-            .min()
-            .unwrap_or(9999)
-    }
-    pub fn get_max_frames(&self) -> usize {
-        self.get_templates()
-            .iter()
-            .map(|item| item.template.len())
-            .max()
-            .unwrap_or(0)
-    }
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-    pub fn get_threshold(&self) -> Option<f32> {
-        self.threshold
-    }
-    pub fn get_averaged_threshold(&self) -> Option<f32> {
-        self.averaged_threshold
-    }
-    pub fn get_averaged_template(&self) -> Option<Vec<Vec<f32>>> {
-        if self.averaged_template.is_some() {
-            Some(self.averaged_template.as_ref().unwrap().to_vec())
-        } else {
-            None
+    pub fn new_from_sample_files(
+        name: String,
+        threshold: Option<f32>,
+        averaged_threshold: Option<f32>,
+        samples: Vec<String>,
+    ) -> Result<Wakeword, String> {
+        let mut samples_data: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+        for sample_path in samples {
+            let path = Path::new(&sample_path);
+            if !path.exists() || !path.is_file() {
+                return Err(String::from("File not found: ".to_owned() + &sample_path));
+            }
+            let file = match File::open(&sample_path) {
+                Ok(it) => it,
+                Err(err) => {
+                    return Err(String::from(
+                        "Unable to open file ".to_owned() + &sample_path + ": " + &err.to_string(),
+                    ))
+                }
+            };
+            samples_data.insert(
+                String::from(path.file_name().unwrap().to_str().unwrap()),
+                compute_sample_features(BufReader::new(file))?,
+            );
         }
-    }
-    pub fn get_templates(&self) -> Vec<WakewordTemplate> {
-        self.templates.clone()
-    }
-    #[cfg(feature = "build")]
-    pub fn add_templates_features(&mut self, templates: Vec<(String, Vec<Vec<f32>>)>) {
-        templates
-            .into_iter()
-            .for_each(|(name, template)| self.templates.push(WakewordTemplate { _name: name, template }));
-        self.averaged_template = average_templates(&self.templates);
-    }
-    pub fn prioritize_template(&mut self, index: usize) {
-        self.templates.rotate_right(1);
-        self.templates.swap(index, 0);
+        Wakeword::new(
+            name,
+            threshold,
+            averaged_threshold,
+            compute_avg_samples_features(&samples_data),
+            samples_data,
+        )
     }
 }
-#[cfg(feature = "build")]
-fn average_templates(templates: &[WakewordTemplate]) -> Option<Vec<Vec<f32>>> {
+fn compute_sample_features<R: std::io::Read>(
+    buffer_reader: BufReader<R>,
+) -> Result<Vec<Vec<f32>>, String> {
+    let wav_reader = WavReader::new(buffer_reader).map_err(|err| err.to_string())?;
+    let fmt = WavFmt {
+        bits_per_sample: wav_reader.spec().bits_per_sample,
+        channels: wav_reader.spec().channels,
+        sample_format: wav_reader.spec().sample_format,
+        sample_rate: wav_reader.spec().sample_rate as usize,
+        endianness: Endianness::Little,
+    };
+    let mut encoder = WAVEncoder::new(
+        &fmt,
+        FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        DETECTOR_INTERNAL_SAMPLE_RATE,
+        DETECTOR_INTERNAL_BIT_DEPTH,
+    )?;
+    let samples_per_frame = encoder.get_output_frame_length();
+    let samples_per_shift = (samples_per_frame as f32
+        / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)
+            as f32) as usize;
+    let mut feature_extractor = FeatureExtractor::new(
+        fmt.sample_rate,
+        samples_per_frame,
+        samples_per_shift,
+        FEATURE_EXTRACTOR_NUM_COEFFICIENT,
+        FEATURE_EXTRACTOR_PRE_EMPHASIS,
+    );
+    let sample_features = wav_reader
+        .into_inner()
+        .buffer()
+        .chunks_exact(encoder.get_input_byte_length())
+        .map(|buffer| encoder.encode(buffer.to_vec()))
+        .map(|samples| feature_extractor.compute_features(&samples))
+        .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, feature_matrix| {
+            for features in feature_matrix {
+                acc.push(features);
+            }
+            acc
+        });
+    Ok(FeatureNormalizer::normalize(sample_features))
+}
+fn compute_avg_samples_features(
+    templates: &HashMap<String, Vec<Vec<f32>>>,
+) -> Option<Vec<Vec<f32>>> {
     if templates.len() <= 1 {
         return None;
     }
-    let mut template_vec = templates.to_vec();
-    template_vec.sort_by(|a, b| a.template.len().partial_cmp(&b.template.len()).unwrap());
-    let mut origin = template_vec[0].template.to_vec();
-    for (i, template_vec) in templates.iter().enumerate().skip(1) {
-        let frames = template_vec.template.to_vec();
-
-        let mut dtw = dtw::new(comparator::calculate_distance);
+    let mut template_vec = templates
+        .iter()
+        .map(|(_, sample)| sample.to_vec())
+        .collect::<Vec<Vec<Vec<f32>>>>();
+    template_vec.sort_by(|a, b| a.len().partial_cmp(&b.len()).unwrap());
+    let mut origin = template_vec.drain(0..1).next().unwrap();
+    for (i, (_, frames)) in templates.iter().enumerate().skip(1) {
+        let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
 
         let _ = dtw.compute_optimal_path(
             &origin.iter().map(|item| &item[..]).collect::<Vec<_>>(),

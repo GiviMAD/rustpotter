@@ -10,7 +10,6 @@ pub struct Dtw<T: Copy> {
     distance_cost_matrix: Option<Matrix<f32>>,
 }
 impl<T: Copy> Dtw<T> {
-    #[cfg(feature = "build")]
     pub fn compute_optimal_path(&mut self, first_sequence: &[T], second_sequence: &[T]) -> f32 {
         self.state_m = first_sequence.len();
         self.state_n = second_sequence.len();
@@ -80,11 +79,14 @@ impl<T: Copy> Dtw<T> {
         &mut self,
         first_sequence: &[T],
         second_sequence: &[T],
-        w: usize,
+        w: u16,
     ) -> f32 {
         self.state_m = first_sequence.len();
         self.state_n = second_sequence.len();
-        let window = cmp::max(w, abs_diff(first_sequence.len(), second_sequence.len()));
+        let window = cmp::max(
+            w as usize,
+            abs_diff(first_sequence.len(), second_sequence.len()),
+        );
         let mut distance_cost_matrix: Matrix<f32> = Matrix::from_iter(
             self.state_m + 1,
             self.state_n + 1,
@@ -136,7 +138,6 @@ impl<T: Copy> Dtw<T> {
         self.state_similarity = Option::Some(similarity);
         similarity
     }
-    #[cfg(feature = "build")]
     pub fn retrieve_optimal_path(&self) -> Option<Vec<[usize; 2]>> {
         self.distance_cost_matrix.as_ref()?;
         let distance_cost_matrix = self.distance_cost_matrix.as_ref().unwrap();
@@ -176,20 +177,20 @@ impl<T: Copy> Dtw<T> {
         path.reverse();
         Some(path)
     }
+    pub fn new(distance_fn: fn(T, T) -> f32) -> Dtw<T> {
+        Dtw {
+            state_m: 0,
+            state_n: 0,
+            distance_fn,
+            state_similarity: Option::None,
+            distance_cost_matrix: Option::None,
+        }
+    }
 }
 fn abs_diff(a: usize, b: usize) -> usize {
     if a > b {
         a - b
     } else {
         b - a
-    }
-}
-pub fn new<T: Copy>(distance_fn: fn(T, T) -> f32) -> Dtw<T> {
-    Dtw {
-        state_m: 0,
-        state_n: 0,
-        distance_fn,
-        state_similarity: Option::None,
-        distance_cost_matrix: Option::None,
     }
 }
