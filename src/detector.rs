@@ -2,7 +2,8 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use crate::{
     internal::{
-        BandPassFilter, FeatureComparator, FeatureExtractor, FeatureNormalizer, WAVEncoder,
+        BandPassFilter, FeatureComparator, FeatureExtractor, FeatureNormalizer,
+        GainNormalizerFilter, WAVEncoder,
     },
     RustpotterConfig, Wakeword, DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
     FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
@@ -19,6 +20,7 @@ pub struct Rustpotter {
     feature_extractor: FeatureExtractor,
     feature_comparator: FeatureComparator,
     band_pass_filter: Option<BandPassFilter>,
+    gain_normalizer_filter: Option<GainNormalizerFilter>,
     // state
     buffering: bool,
     audio_features_window: Vec<Vec<f32>>,
@@ -60,6 +62,11 @@ impl Rustpotter {
         } else {
             None
         };
+        let gain_normalizer_filter = if config.filters.gain_normalizer {
+            Some(GainNormalizerFilter::new())
+        } else {
+            None
+        };
         Ok(Rustpotter {
             avg_threshold: config.detector.avg_threshold,
             threshold: config.detector.threshold,
@@ -67,6 +74,7 @@ impl Rustpotter {
             feature_extractor,
             feature_comparator,
             band_pass_filter,
+            gain_normalizer_filter,
             audio_features_window: Vec::new(),
             buffering: true,
             max_detection_frames: 0,
@@ -78,33 +86,37 @@ impl Rustpotter {
     }
     pub fn add_wakeword(&mut self, wakeword: Wakeword) {
         self.wakewords.push(wakeword);
-        // update detection frame requirements
+        // update detection frame requirements and gain normalizer target rms level.
         let mut min_frames = usize::MAX;
         let mut max_frames = usize::MIN;
+        let mut rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
             if !wakeword.samples_features.is_empty() {
-                min_frames = usize::min(
-                    min_frames,
-                    wakeword
-                        .samples_features
-                        .iter()
-                        .map(|(_, feature_frames)| feature_frames.len())
-                        .min()
-                        .unwrap_or(0),
-                );
-                max_frames = usize::max(
-                    max_frames,
-                    wakeword
-                        .samples_features
-                        .iter()
-                        .map(|(_, feature_frames)| feature_frames.len())
-                        .max()
-                        .unwrap_or(0),
-                );
+                min_frames = wakeword
+                    .samples_features
+                    .iter()
+                    .map(|(_, feature_frames)| feature_frames.len())
+                    .min()
+                    .unwrap_or(0)
+                    .min(min_frames);
+                max_frames = wakeword
+                    .samples_features
+                    .iter()
+                    .map(|(_, feature_frames)| feature_frames.len())
+                    .max()
+                    .unwrap_or(0)
+                    .max(max_frames);
+                rms_level = wakeword.rms_level.max(rms_level);
             }
         }
         self.min_detection_frames = min_frames;
         self.max_detection_frames = max_frames;
+        if self.gain_normalizer_filter.is_some() {
+            self.gain_normalizer_filter
+                .as_mut()
+                .unwrap()
+                .target_rms_level = rms_level;
+        }
         self.buffering = self.audio_features_window.len() < self.min_detection_frames;
     }
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
@@ -188,6 +200,12 @@ impl Rustpotter {
     }
     fn process_internal(&mut self, audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
         let mut processed_audio = audio_buffer;
+        if self.gain_normalizer_filter.is_some() {
+            self.gain_normalizer_filter
+                .as_mut()
+                .unwrap()
+                .filter(&mut processed_audio);
+        }
         if self.band_pass_filter.is_some() {
             self.band_pass_filter
                 .as_mut()
@@ -281,7 +299,7 @@ impl Rustpotter {
             .collect::<Vec<RustpotterDetection>>();
         wakeword_detections
             .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
-        let wakeword_detection_opt = wakeword_detections.into_iter().next();
+        let wakeword_detection = wakeword_detections.into_iter().next();
         if self.spot_in_frames != 0 {
             self.spot_in_frames = self.spot_in_frames - 1;
         }
@@ -292,12 +310,12 @@ impl Rustpotter {
             self.spot_in_frames = 0;
             Some(wakeword_detection)
         } else {
-            if wakeword_detection_opt.is_some() {
+            if wakeword_detection.is_some() {
                 if self.partial_detection.is_none()
                     || self.partial_detection.as_ref().unwrap().score
-                        < wakeword_detection_opt.as_ref().unwrap().score
+                        < wakeword_detection.as_ref().unwrap().score
                 {
-                    self.partial_detection = wakeword_detection_opt;
+                    self.partial_detection = wakeword_detection;
                 }
                 self.spot_in_frames = self.max_detection_frames * 2;
             }

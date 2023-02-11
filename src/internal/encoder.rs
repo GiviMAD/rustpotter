@@ -113,8 +113,7 @@ impl WAVEncoder {
                     target_sample_rate,
                     input_samples_per_frame,
                     1,
-                )
-                .unwrap();
+                ).map_err(|_| "Unsupported sample rate, unable to initialize the resampler")?;
                 input_samples_per_frame =
                     resampler.input_frames_next() * input_spec.channels as usize;
                 output_samples_per_frame = resampler.output_frames_next();

@@ -16,15 +16,15 @@ pub type SampleFormat = hound::SampleFormat;
 
 /// Wav spec representation
 pub struct WavFmt {
-    /// Indicates the sample rate of the input
+    /// Indicates the sample rate of the input audio stream.
     pub sample_rate: usize,
-    /// Indicates the sample format of the input bytes
+    /// Indicates the sample format used to encode the input audio stream bytes.
     pub sample_format: SampleFormat,
-    /// Indicates the bit depth of the input samples
+    /// Indicates the bit depth used to encode the input audio stream bytes.
     pub bits_per_sample: u16,
-    /// Indicates the number of channels in the input
+    /// Indicates the number of channels of the input audio stream.
     pub channels: u16,
-    /// Input the sample endianness of the input bytes
+    /// Input the sample endianness used to encode the input audio stream bytes.
     pub endianness: Endianness,
 }
 impl Default for WavFmt {
@@ -39,16 +39,21 @@ impl Default for WavFmt {
     }
 }
 pub struct AudioFilters {
-    /// Enables band-pass audio filter
+    /// Enables a gain-normalizer audio filter that normalize the loudness of each input sample buffer 
+    /// with respect to the loudness wakeword sample (the RMS level is used as loudness measure).
+    pub gain_normalizer: bool,
+    /// Enables band-pass audio filter that attenuates frequencies outside that range 
+    /// defined by the low_cutoff and high_cutoff values.
     pub band_pass: bool,
-    /// Low cutoff for the band-pass filter
+    /// Low cutoff for the band-pass filter.
     pub low_cutoff: f32,
-    /// High cutoff for the band-pass filter
+    /// High cutoff for the band-pass filter.
     pub high_cutoff: f32,
 }
 impl Default for AudioFilters {
     fn default() -> AudioFilters {
         AudioFilters {
+            gain_normalizer: true,
             band_pass: true,
             low_cutoff: 80.,
             high_cutoff: 400.,
@@ -56,13 +61,13 @@ impl Default for AudioFilters {
     }
 }
 pub struct DetectorConfig {
-    /// Minimum score against the averaged sample features
+    /// Minimum score against the averaged sample features.
     pub avg_threshold: f32,
-    /// Minimum score against one of the sample features
+    /// Minimum score against one of the sample features.
     pub threshold: f32,
-    /// Feature comparator band size
+    /// Feature comparator band size.
     pub comparator_band_size: u16,
-    /// Feature comparator reference
+    /// Feature comparator reference.
     pub comparator_reference: f32,
 }
 impl Default for DetectorConfig {
@@ -76,11 +81,11 @@ impl Default for DetectorConfig {
     }
 }
 pub struct RustpotterConfig {
-    /// configures expected wav input format
+    /// configures expected wav input format.
     pub fmt: WavFmt,
-    /// Configures detection
+    /// Configures detection.
     pub detector: DetectorConfig,
-    /// Configures input audio filters
+    /// Configures input audio filters.
     pub filters: AudioFilters,
 }
 impl Default for RustpotterConfig {
@@ -88,7 +93,7 @@ impl Default for RustpotterConfig {
         RustpotterConfig {
             fmt: WavFmt::default(),
             detector: DetectorConfig::default(),
-            filters: AudioFilters::default()
+            filters: AudioFilters::default(),
         }
     }
 }

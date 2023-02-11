@@ -1,10 +1,13 @@
-use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
+use std::{collections::HashMap, fs::File, io::BufReader, path::Path, cmp::Ordering};
 
 use ciborium::{de, ser};
 use hound::WavReader;
 
 use crate::{
-    internal::{Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, WAVEncoder},
+    internal::{
+        Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, GainNormalizerFilter,
+        WAVEncoder,
+    },
     Endianness, WavFmt, DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
     FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
     FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
@@ -17,6 +20,7 @@ pub struct Wakeword {
     pub samples_features: HashMap<String, Vec<Vec<f32>>>,
     pub threshold: Option<f32>,
     pub avg_threshold: Option<f32>,
+    pub rms_level: f32,
     pub enabled: bool,
 }
 impl Wakeword {
@@ -60,6 +64,7 @@ impl Wakeword {
         threshold: Option<f32>,
         avg_threshold: Option<f32>,
         avg_features: Option<Vec<Vec<f32>>>,
+        rms_level: f32,
         samples_features: HashMap<String, Vec<Vec<f32>>>,
     ) -> Result<Wakeword, String> {
         Ok(Wakeword {
@@ -68,37 +73,45 @@ impl Wakeword {
             avg_threshold,
             avg_features,
             samples_features,
+            rms_level,
             enabled: true,
         })
     }
     pub fn new_from_sample_buffers(
         name: String,
         threshold: Option<f32>,
-        averaged_threshold: Option<f32>,
+        avg_threshold: Option<f32>,
         samples: HashMap<String, Vec<u8>>,
     ) -> Result<Wakeword, String> {
-        let mut samples_data: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+        let mut samples_features: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+        let mut rms_level = 0.;
         for (key, buffer) in samples {
-            samples_data.insert(
+            let mut sample_rms_level = 0.;
+            samples_features.insert(
                 key,
-                compute_sample_features(BufReader::new(buffer.as_slice()))?,
+                compute_sample_features(BufReader::new(buffer.as_slice()), &mut sample_rms_level)?,
             );
+            if sample_rms_level > rms_level {
+                rms_level = sample_rms_level;
+            }
         }
         Wakeword::new(
             name,
             threshold,
-            averaged_threshold,
-            compute_avg_samples_features(&samples_data),
-            samples_data,
+            avg_threshold,
+            compute_avg_samples_features(&samples_features),
+            rms_level,
+            samples_features,
         )
     }
     pub fn new_from_sample_files(
         name: String,
         threshold: Option<f32>,
-        averaged_threshold: Option<f32>,
+        avg_threshold: Option<f32>,
         samples: Vec<String>,
     ) -> Result<Wakeword, String> {
-        let mut samples_data: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+        let mut samples_features: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+        let mut rms_level = 0.;
         for sample_path in samples {
             let path = Path::new(&sample_path);
             if !path.exists() || !path.is_file() {
@@ -112,22 +125,28 @@ impl Wakeword {
                     ))
                 }
             };
-            samples_data.insert(
+            let mut sample_rms_level = 0.;
+            samples_features.insert(
                 String::from(path.file_name().unwrap().to_str().unwrap()),
-                compute_sample_features(BufReader::new(file))?,
+                compute_sample_features(BufReader::new(file), &mut sample_rms_level)?,
             );
+            if sample_rms_level > rms_level {
+                rms_level = sample_rms_level;
+            }
         }
         Wakeword::new(
             name,
             threshold,
-            averaged_threshold,
-            compute_avg_samples_features(&samples_data),
-            samples_data,
+            avg_threshold,
+            compute_avg_samples_features(&samples_features),
+            rms_level,
+            samples_features,
         )
     }
 }
 fn compute_sample_features<R: std::io::Read>(
     buffer_reader: BufReader<R>,
+    out_rms_level: &mut f32,
 ) -> Result<Vec<Vec<f32>>, String> {
     let wav_reader = WavReader::new(buffer_reader).map_err(|err| err.to_string())?;
     let fmt = WavFmt {
@@ -154,11 +173,21 @@ fn compute_sample_features<R: std::io::Read>(
         FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     );
-    let sample_features = wav_reader
+    // used to calculate measure wakeword samples loudness
+    let gain_normalizer_filter = GainNormalizerFilter::new();
+    let samples = wav_reader
         .into_inner()
         .buffer()
         .chunks_exact(encoder.get_input_byte_length())
         .map(|buffer| encoder.encode(buffer.to_vec()))
+        .fold(Vec::new(), |mut acc, mut i| {
+            acc.append(&mut i);
+            acc
+        });
+    *out_rms_level = gain_normalizer_filter.get_rms_level(&samples);
+    let sample_features = samples
+        .as_slice()
+        .chunks_exact(encoder.get_output_frame_length())
         .map(|samples| feature_extractor.compute_features(&samples))
         .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, feature_matrix| {
             for features in feature_matrix {
@@ -174,11 +203,19 @@ fn compute_avg_samples_features(
     if templates.len() <= 1 {
         return None;
     }
-    let mut template_vec = templates
+    let mut template_values: Vec<_> = templates.into_iter().collect();
+    template_values.sort_by(|a, b| {
+        let equality = b.1.len().cmp(&a.1.len());
+         if equality == Ordering::Equal {
+             a.0.cmp(b.0)
+         } else {
+             equality
+         }
+     });
+    let mut template_vec = template_values
         .iter()
         .map(|(_, sample)| sample.to_vec())
         .collect::<Vec<Vec<Vec<f32>>>>();
-    template_vec.sort_by(|a, b| a.len().partial_cmp(&b.len()).unwrap());
     let mut origin = template_vec.drain(0..1).next().unwrap();
     for (i, (_, frames)) in templates.iter().enumerate().skip(1) {
         let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
