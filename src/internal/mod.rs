@@ -1,9 +1,10 @@
+mod band_pass_filter;
 mod comparator;
 mod dtw;
 mod encoder;
 mod feature_extractor;
 mod feature_normalizer;
-
+pub(crate) use band_pass_filter::BandPassFilter;
 pub(crate) use comparator::FeatureComparator;
 pub(crate) use dtw::Dtw;
 pub(crate) use encoder::WAVEncoder;

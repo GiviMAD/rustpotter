@@ -14,9 +14,7 @@ pub(crate) struct WAVEncoder {
     source_int_bits_per_sample: u16,
     source_channels: u16,
     source_endianness: Endianness,
-
     target_bits_per_sample: u16,
-
     input_samples_per_frame: usize,
     output_samples_per_frame: usize,
 }
