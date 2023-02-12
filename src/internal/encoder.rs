@@ -29,12 +29,12 @@ impl WAVEncoder {
     pub fn get_input_byte_length(&self) -> usize {
         self.get_input_frame_length() * (self.source_bits_per_sample as usize / 8)
     }
-    pub fn encode(&mut self, buffer: Vec<u8>) -> Vec<f32> {
+    pub fn encode(&mut self, buffer: &[u8]) -> Vec<f32> {
         match self.source_sample_format {
             SampleFormat::Int => {
                 let bits_per_sample = self.source_bits_per_sample;
                 let endianness = self.source_endianness.clone();
-                self.reencode(encode_int_audio_bytes(buffer, bits_per_sample, endianness))
+                self.reencode(&encode_int_audio_bytes(buffer, bits_per_sample, endianness))
             }
             SampleFormat::Float => {
                 let bits_per_sample = self.source_bits_per_sample;
@@ -47,7 +47,7 @@ impl WAVEncoder {
             }
         }
     }
-    pub fn reencode(&mut self, buffer: Vec<i32>) -> Vec<f32> {
+    pub fn reencode(&mut self, buffer: &[i32]) -> Vec<f32> {
         let mono_buffer_with_internal_bit_depth = buffer
             .chunks_exact(self.source_channels as usize)
             .map(|chunk| chunk[0])
@@ -77,7 +77,7 @@ impl WAVEncoder {
     }
     pub fn reencode_float(&mut self, audio_chunk: Vec<f32>) -> Vec<f32> {
         self.reencode(
-            audio_chunk
+            &audio_chunk
                 .into_iter()
                 .map(|sample| {
                     if sample < 0. {
@@ -151,7 +151,7 @@ impl WAVEncoder {
     }
 }
 fn encode_int_audio_bytes(
-    audio_buffer: Vec<u8>,
+    audio_buffer: &[u8],
     bits_per_sample: u16,
     endianness: Endianness,
 ) -> Vec<i32> {
@@ -188,7 +188,7 @@ fn encode_int_audio_bytes(
 }
 
 fn encode_float_audio_bytes(
-    audio_buffer: Vec<u8>,
+    audio_buffer: &[u8],
     bits_per_sample: u16,
     endianness: Endianness,
 ) -> Vec<f32> {

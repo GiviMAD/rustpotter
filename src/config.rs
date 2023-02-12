@@ -14,7 +14,7 @@ pub enum Endianness {
 /// Supported sample formats
 pub type SampleFormat = hound::SampleFormat;
 
-/// Wav spec representation
+/// Wav format representation
 pub struct WavFmt {
     /// Indicates the sample rate of the input audio stream.
     pub sample_rate: usize,
@@ -38,7 +38,8 @@ impl Default for WavFmt {
         }
     }
 }
-pub struct AudioFilters {
+/// Configures the audio filters used by the detector.
+pub struct FiltersConfig {
     /// Enables a gain-normalizer audio filter that normalize the loudness of each input sample buffer 
     /// with respect to the loudness wakeword sample (the RMS level is used as loudness measure).
     pub gain_normalizer: bool,
@@ -50,9 +51,9 @@ pub struct AudioFilters {
     /// High cutoff for the band-pass filter.
     pub high_cutoff: f32,
 }
-impl Default for AudioFilters {
-    fn default() -> AudioFilters {
-        AudioFilters {
+impl Default for FiltersConfig {
+    fn default() -> FiltersConfig {
+        FiltersConfig {
             gain_normalizer: true,
             band_pass: true,
             low_cutoff: 80.,
@@ -60,10 +61,11 @@ impl Default for AudioFilters {
         }
     }
 }
+/// Configures the detector scoring behavior.
 pub struct DetectorConfig {
-    /// Minimum score against the averaged sample features.
+    /// Minimum required score against the wakeword averaged feature frame vector.
     pub avg_threshold: f32,
-    /// Minimum score against one of the sample features.
+    /// Minimum required score against the some of the wakeword feature frame vectors.
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
@@ -83,20 +85,21 @@ impl Default for DetectorConfig {
         }
     }
 }
+/// Encapsulates all the tool configurations.
 pub struct RustpotterConfig {
     /// configures expected wav input format.
     pub fmt: WavFmt,
     /// Configures detection.
     pub detector: DetectorConfig,
     /// Configures input audio filters.
-    pub filters: AudioFilters,
+    pub filters: FiltersConfig,
 }
 impl Default for RustpotterConfig {
     fn default() -> RustpotterConfig {
         RustpotterConfig {
             fmt: WavFmt::default(),
             detector: DetectorConfig::default(),
-            filters: AudioFilters::default(),
+            filters: FiltersConfig::default(),
         }
     }
 }

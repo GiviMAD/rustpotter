@@ -14,6 +14,8 @@ mod config;
 mod detector;
 mod internal;
 mod wakeword;
+pub use config::FiltersConfig;
+pub use config::DetectorConfig;
 pub use config::Endianness;
 pub use config::RustpotterConfig;
 pub use config::SampleFormat;

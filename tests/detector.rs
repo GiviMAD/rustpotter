@@ -19,7 +19,7 @@ fn it_can_detect_wakewords() {
     config.detector.threshold = 0.5;
     config.filters.gain_normalizer = false;
     config.filters.band_pass = false;
-    let mut rustpotter = Rustpotter::new(config).unwrap();
+    let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
     rustpotter.add_wakeword_from_file(&model_path).unwrap();
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
@@ -28,7 +28,7 @@ fn it_can_detect_wakewords() {
         get_audio_with_two_wakewords(sample_rate, bits_per_sample, sample_1_path, sample_2_path);
     let detected_wakewords = live_audio_simulation
         .chunks_exact(rustpotter.get_bytes_per_frame())
-        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer.to_vec()))
+        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer))
         .collect::<Vec<_>>();
     assert_eq!(detected_wakewords.len(), 2);
     print_detection(&detected_wakewords[0]);
@@ -55,7 +55,7 @@ fn it_can_detect_wakewords_while_applying_band_pass_audio_filter() {
     config.filters.band_pass = true;
     config.filters.low_cutoff = 80.0;
     config.filters.high_cutoff = 400.0;
-    let mut rustpotter = Rustpotter::new(config).unwrap();
+    let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
     rustpotter.add_wakeword_from_file(&model_path).unwrap();
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
@@ -64,7 +64,7 @@ fn it_can_detect_wakewords_while_applying_band_pass_audio_filter() {
         get_audio_with_two_wakewords(sample_rate, bits_per_sample, sample_1_path, sample_2_path);
     let detected_wakewords = live_audio_simulation
         .chunks_exact(rustpotter.get_bytes_per_frame())
-        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer.to_vec()))
+        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer))
         .collect::<Vec<_>>();
     assert_eq!(detected_wakewords.len(), 2);
     print_detection(&detected_wakewords[0]);
@@ -87,7 +87,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
     config.detector.threshold = 0.5;
     config.filters.gain_normalizer = true;
     config.filters.band_pass = false;
-    let mut rustpotter = Rustpotter::new(config).unwrap();
+    let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
     rustpotter.add_wakeword_from_file(&model_path).unwrap();
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
@@ -102,7 +102,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
     );
     let detected_wakewords = live_audio_simulation
         .chunks_exact(rustpotter.get_bytes_per_frame())
-        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer.to_vec()))
+        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer))
         .collect::<Vec<_>>();
     assert_eq!(detected_wakewords.len(), 2);
     print_detection(&detected_wakewords[0]);
@@ -127,7 +127,7 @@ fn it_can_detect_wakewords_while_applying_band_pass_and_gain_normalizer_audio_fi
     config.filters.band_pass = true;
     config.filters.low_cutoff = 80.0;
     config.filters.high_cutoff = 400.0;
-    let mut rustpotter = Rustpotter::new(config).unwrap();
+    let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
     rustpotter.add_wakeword_from_file(&model_path).unwrap();
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
@@ -142,7 +142,7 @@ fn it_can_detect_wakewords_while_applying_band_pass_and_gain_normalizer_audio_fi
     );
     let detected_wakewords = live_audio_simulation
         .chunks_exact(rustpotter.get_bytes_per_frame())
-        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer.to_vec()))
+        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer))
         .collect::<Vec<_>>();
     assert_eq!(detected_wakewords.len(), 2);
     print_detection(&detected_wakewords[0]);

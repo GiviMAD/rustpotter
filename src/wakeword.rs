@@ -13,6 +13,8 @@ use crate::{
     FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
 };
 use serde::{Deserialize, Serialize};
+
+/// Wakeword representation.
 #[derive(Serialize, Deserialize)]
 pub struct Wakeword {
     pub name: String,
@@ -179,7 +181,7 @@ fn compute_sample_features<R: std::io::Read>(
         .into_inner()
         .buffer()
         .chunks_exact(encoder.get_input_byte_length())
-        .map(|buffer| encoder.encode(buffer.to_vec()))
+        .map(|buffer| encoder.encode(buffer))
         .fold(Vec::new(), |mut acc, mut i| {
             acc.append(&mut i);
             acc

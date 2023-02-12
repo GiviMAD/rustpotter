@@ -13,7 +13,7 @@ pub(crate) struct BandPassFilter {
     y2: f32,
 }
 impl BandPassFilter {
-    pub fn filter(&mut self, signal: &mut Vec<f32>) {
+    pub fn filter(&mut self, signal: &mut [f32]) {
         for sample in signal.iter_mut() {
             let x = *sample;
             *sample = self.a0 * x + self.a1 * self.x1 + self.a2 * self.x2 - self.b1 * self.y1 - self.b2 * self.y2;
