@@ -217,7 +217,7 @@ fn compute_avg_samples_features(
         .map(|(_, sample)| sample.to_vec())
         .collect::<Vec<Vec<Vec<f32>>>>();
     let mut origin = template_vec.drain(0..1).next().unwrap();
-    for (i, (_, frames)) in templates.iter().enumerate().skip(1) {
+    for (i, frames) in template_vec.iter().enumerate() {
         let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
 
         let _ = dtw.compute_optimal_path(
