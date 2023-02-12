@@ -91,7 +91,7 @@ impl FeatureExtractor {
     // ported from Gist C++ audio library
     fn calculate_magnitude_spectrum(&self, audio_frame: &[f32]) -> Vec<f32> {
         if self.hamming_window.is_none() {
-            panic!("[Extractor] hamming window not initialized");
+            return Vec::new();
         }
         let mut buffer = vec![];
         let window = self.hamming_window.as_ref().unwrap();
@@ -140,7 +140,7 @@ impl FeatureExtractor {
     }
     fn calculate_mel_frequency_spectrum(&self, magnitude_spectrum: &[f32]) -> Vec<f32> {
         if self.filter_bank.is_none() {
-            panic!("[Extractor] filter bank not initialized");
+            return Vec::new();
         }
         let filter_bank = self.filter_bank.as_ref().unwrap();
         let mut mel_spectrum: Vec<f32> = Vec::new();

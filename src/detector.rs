@@ -26,7 +26,7 @@ use crate::{
 ///     let detection_option = detector.process_short_int_buffer(frame_buffer);
 ///     if detection_option.is_some() {
 ///         let detection = detection_option.unwrap();
-///         println!("{:?}", detection);
+///         // println!("{:?}", detection);
 ///     }
 /// // }
 /// ```
