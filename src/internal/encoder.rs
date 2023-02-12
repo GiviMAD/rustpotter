@@ -39,7 +39,7 @@ impl WAVEncoder {
             SampleFormat::Float => {
                 let bits_per_sample = self.source_bits_per_sample;
                 let endianness = self.source_endianness.clone();
-                self.reencode_float(encode_float_audio_bytes(
+                self.reencode_float(&encode_float_audio_bytes(
                     buffer,
                     bits_per_sample,
                     endianness,
@@ -75,15 +75,16 @@ impl WAVEncoder {
             waves_out.get(0).unwrap().to_vec()
         }
     }
-    pub fn reencode_float(&mut self, audio_chunk: Vec<f32>) -> Vec<f32> {
+    pub fn reencode_float(&mut self, audio_chunk: &[f32]) -> Vec<f32> {
         self.reencode(
             &audio_chunk
-                .into_iter()
+                .iter()
                 .map(|sample| {
-                    if sample < 0. {
-                        (sample * 32768.) as i32
+                    let value = *sample;
+                    if value < 0. {
+                        (value * 32768.) as i32
                     } else {
-                        (sample * 32767.) as i32
+                        (value * 32767.) as i32
                     }
                 })
                 .collect::<Vec<i32>>(),

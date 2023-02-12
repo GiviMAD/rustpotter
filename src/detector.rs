@@ -23,7 +23,7 @@ use crate::{
 /// let mut frame_buffer: Vec<i16> = vec![0; detector.get_samples_per_frame()];
 /// // while true { Iterate forever
 ///     // fill the buffer with the required samples/bytes...
-///     let detection_option = detector.process_short_int_buffer(frame_buffer);
+///     let detection_option = detector.process_short_int_buffer(&frame_buffer);
 ///     if detection_option.is_some() {
 ///         let detection = detection_option.unwrap();
 ///         // println!("{:?}", detection);
@@ -207,12 +207,12 @@ impl Rustpotter {
     /// Assumes that detector sample_format is 'int'.
     pub fn process_short_int_buffer(
         &mut self,
-        audio_samples: Vec<i16>,
+        audio_samples: &[i16],
     ) -> Option<RustpotterDetection> {
         let mut encoded_samples = self.wav_encoder.reencode(
             &audio_samples
                 .into_iter()
-                .map(|sample| sample as i32)
+                .map(|sample| *sample as i32)
                 .collect::<Vec<i32>>(),
         );
         self.process_internal(&mut encoded_samples)
@@ -241,7 +241,7 @@ impl Rustpotter {
     /// Requires that detector bits_per_sample is 32 to work.
     ///
     /// Requires that detector sample_format is 'float' to work.
-    pub fn process_float_buffer(&mut self, audio_samples: Vec<f32>) -> Option<RustpotterDetection> {
+    pub fn process_float_buffer(&mut self, audio_samples: &[f32]) -> Option<RustpotterDetection> {
         let mut encoded_samples = self.wav_encoder.reencode_float(audio_samples);
         self.process_internal(&mut encoded_samples)
     }
