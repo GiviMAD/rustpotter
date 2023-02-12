@@ -259,8 +259,6 @@ impl Rustpotter {
         result
     }
     fn run_detection(&mut self) -> Option<RustpotterDetection> {
-        // let result_option = self.get_best_wakeword(self.audio_features.to_vec());
-        // match result_option {}
         let mut wakeword_detections = self
             .wakewords
             .iter()

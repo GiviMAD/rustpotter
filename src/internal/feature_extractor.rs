@@ -25,7 +25,7 @@ impl FeatureExtractor {
             samples: vec![],
             sample_rate,
             block_size: samples_per_shift * sample_rate / 8000,
-            samples_per_frame, // TODO: add options
+            samples_per_frame,
             pre_emphasis_coefficient,
             num_coefficients,
             min_frequency: 0,
