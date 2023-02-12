@@ -1,6 +1,5 @@
 use rustfft::{num_complex::Complex32, FftPlanner};
-use simple_matrix::Matrix;
-use std::iter;
+
 pub struct FeatureExtractor {
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
@@ -8,11 +7,12 @@ pub struct FeatureExtractor {
     samples_per_frame: usize,
     block_size: usize,
     samples: Vec<f32>,
-    filter_bank: Option<Matrix<f32>>,
+    filter_bank: Option<Vec<Vec<f32>>>,
     hamming_window: Option<Vec<f32>>,
     min_frequency: usize,
     max_frequency: usize,
 }
+
 impl FeatureExtractor {
     pub fn new(
         sample_rate: usize,
@@ -147,7 +147,7 @@ impl FeatureExtractor {
         for i in 0..self.num_coefficients {
             let mut coeff = 0.;
             for j in 0..magnitude_spectrum.len() {
-                let filter_bank_val = filter_bank.get(i, j).unwrap();
+                let filter_bank_val = filter_bank[i][j];
                 coeff += (magnitude_spectrum[j] * magnitude_spectrum[j]) * filter_bank_val;
             }
             mel_spectrum.push(coeff);
@@ -177,12 +177,8 @@ impl FeatureExtractor {
         let max_mel = self.frequency_to_mel(self.max_frequency).floor();
         let min_mel = self.frequency_to_mel(self.min_frequency).floor();
 
-        let mut filter_bank: Matrix<f32> = Matrix::from_iter(
-            self.num_coefficients,
-            self.get_magnitude_spectrum_size(),
-            iter::repeat(0.),
-        );
-
+        let mut filter_bank =
+            vec![vec![0.; self.get_magnitude_spectrum_size()]; self.num_coefficients];
         let mut centre_indices: Vec<usize> = Vec::new();
 
         for i in 0..self.num_coefficients + 2 {
@@ -204,26 +200,18 @@ impl FeatureExtractor {
 
             // upward slope
             for k in filter_begin_index..filter_center_index {
-                filter_bank.set(
-                    i,
-                    k,
-                    (k - filter_begin_index) as f32 / triangle_range_up as f32,
-                );
+                filter_bank[i][k] = (k - filter_begin_index) as f32 / triangle_range_up as f32;
             }
             // downwards slope
             for k in filter_center_index..filter_end_index {
-                filter_bank.set(
-                    i,
-                    k,
-                    (filter_end_index - k) as f32 / triangle_range_down as f32,
-                );
+                filter_bank[i][k] = (filter_end_index - k) as f32 / triangle_range_down as f32;
             }
         }
         self.filter_bank = Option::Some(filter_bank)
     }
 }
 
-pub fn convert_int16_to_float32(n: f32) -> f32 {
+fn convert_int16_to_float32(n: f32) -> f32 {
     let v = if n < 0. { n / 32768. } else { n / 32767. }; // convert in range [-32768, 32767]
     return v.clamp(-1., 1.);
 }

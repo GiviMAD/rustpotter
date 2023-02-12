@@ -1,7 +1,7 @@
 use crate::{
-    DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_THRESHOLD, DETECTOR_INTERNAL_BIT_DEPTH,
-    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-    FEATURE_COMPARATOR_DEFAULT_REFERENCE, DETECTOR_DEFAULT_MIN_SCORES,
+    DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
+    DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
+    FEATURE_COMPARATOR_DEFAULT_BAND_SIZE, FEATURE_COMPARATOR_DEFAULT_REFERENCE,
 };
 
 /// Indicates the byte endianness
@@ -40,10 +40,10 @@ impl Default for WavFmt {
 }
 /// Configures the audio filters used by the detector.
 pub struct FiltersConfig {
-    /// Enables a gain-normalizer audio filter that normalize the loudness of each input sample buffer 
+    /// Enables a gain-normalizer audio filter that normalize the loudness of each input sample buffer
     /// with respect to the loudness wakeword sample (the RMS level is used as loudness measure).
     pub gain_normalizer: bool,
-    /// Enables band-pass audio filter that attenuates frequencies outside that range 
+    /// Enables band-pass audio filter that attenuates frequencies outside that range
     /// defined by the low_cutoff and high_cutoff values.
     pub band_pass: bool,
     /// Low cutoff for the band-pass filter.

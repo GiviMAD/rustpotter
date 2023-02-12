@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::BufReader, path::Path, cmp::Ordering};
+use std::{cmp::Ordering, collections::HashMap, fs::File, io::BufReader, path::Path};
 
 use ciborium::{de, ser};
 use hound::WavReader;
@@ -208,12 +208,12 @@ fn compute_avg_samples_features(
     let mut template_values: Vec<_> = templates.into_iter().collect();
     template_values.sort_by(|a, b| {
         let equality = b.1.len().cmp(&a.1.len());
-         if equality == Ordering::Equal {
-             a.0.cmp(b.0)
-         } else {
-             equality
-         }
-     });
+        if equality == Ordering::Equal {
+            a.0.cmp(b.0)
+        } else {
+            equality
+        }
+    });
     let mut template_vec = template_values
         .iter()
         .map(|(_, sample)| sample.to_vec())

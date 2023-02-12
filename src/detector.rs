@@ -253,10 +253,7 @@ impl Rustpotter {
                 .filter(audio_buffer);
         }
         if self.band_pass_filter.is_some() {
-            self.band_pass_filter
-                .as_mut()
-                .unwrap()
-                .filter(audio_buffer);
+            self.band_pass_filter.as_mut().unwrap().filter(audio_buffer);
         }
         self.feature_extractor
             .compute_features(audio_buffer)

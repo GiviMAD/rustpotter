@@ -81,9 +81,9 @@ impl WAVEncoder {
                 .into_iter()
                 .map(|sample| {
                     if sample < 0. {
-                        (sample * 0x8000 as f32) as i32
+                        (sample * 32768.) as i32
                     } else {
-                        (sample * 0x7fff as f32) as i32
+                        (sample * 32767.) as i32
                     }
                 })
                 .collect::<Vec<i32>>(),
@@ -104,7 +104,9 @@ impl WAVEncoder {
             Err("Unsupported sample rate")
         } else if input_spec.channels != 1 && input_spec.channels != 2 {
             Err("Unsupported channel number")
-        } else if SampleFormat::Float == input_spec.sample_format && input_spec.bits_per_sample != 32 {
+        } else if SampleFormat::Float == input_spec.sample_format
+            && input_spec.bits_per_sample != 32
+        {
             Err("Bit per sample should be 32 when sample format is float")
         } else {
             let resampler = if input_spec.sample_rate != target_sample_rate {
@@ -113,7 +115,8 @@ impl WAVEncoder {
                     target_sample_rate,
                     input_samples_per_frame,
                     1,
-                ).map_err(|_| "Unsupported sample rate, unable to initialize the resampler")?;
+                )
+                .map_err(|_| "Unsupported sample rate, unable to initialize the resampler")?;
                 input_samples_per_frame =
                     resampler.input_frames_next() * input_spec.channels as usize;
                 output_samples_per_frame = resampler.output_frames_next();
@@ -235,7 +238,10 @@ fn it_returns_correct_samples_per_frame() {
     let encoder = WAVEncoder::new(&wav_spec, 30, 8000, 16).unwrap();
     let input_length = encoder.get_input_frame_length();
     let output_length = encoder.get_output_frame_length();
-    assert_ne!(input_length, output_length, "input and output have same length");
+    assert_ne!(
+        input_length, output_length,
+        "input and output have same length"
+    );
     assert_eq!(input_length, 960, "input size is correct");
     assert_eq!(output_length, 480, "output size is correct");
 }

@@ -9,4 +9,3 @@ hound = "3.4.0"
 rubato = { version = "0.12.0", default-features = false }
 rustfft = { version = "6.1.0", default-features = false }
 serde =  { version = "1.0.152", features = ["derive"], default-features = false }
-simple-matrix = { version = "0.1.2", default-features = false }

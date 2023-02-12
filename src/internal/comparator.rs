@@ -1,4 +1,4 @@
-use super::{Dtw};
+use super::Dtw;
 use std::cmp;
 
 pub struct FeatureComparator {
@@ -25,7 +25,6 @@ impl FeatureComparator {
         1. - cosine_similarity(ax, bx)
     }
 }
-
 
 pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {
     let dimensionality = cmp::min(vector_a.len(), vector_b.len());
