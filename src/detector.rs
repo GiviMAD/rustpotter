@@ -11,26 +11,47 @@ use crate::{
 };
 
 pub struct Rustpotter {
-    // config
+    // Config
+    /// Required score against the averaged features vector. Only for discard frames.
     avg_threshold: f32,
+    /// Required score while comparing the wakeword against the audio_features_window.
     threshold: f32,
-    wakewords: Vec<Wakeword>,
-    // utils
-    reencoder: WAVEncoder,
+    /// Required number of partial scores (scores over threshold) to consider the detection real.
+    min_scores: usize,
+    // Utils
+    /// Utility to encode or re-encode the input wav data.
+    wav_encoder: WAVEncoder,
+    /// Utility to extract a collection of features for each input audio frame.
     feature_extractor: FeatureExtractor,
+    /// Utility to measure the similarity between two feature frame vectors.
     feature_comparator: FeatureComparator,
+    /// Optional band-pass filter implementation.
     band_pass_filter: Option<BandPassFilter>,
+    /// Optional gain filter implementation.
     gain_normalizer_filter: Option<GainNormalizerFilter>,
-    // state
+    // State
+    /// The collection of wakewords to run detection against.
+    wakewords: Vec<Wakeword>,
+    /// Indicates that the audio_features_window has enough features to run the detection.
+    /// This means its length is greater or equal to the min_features_frames value.
     buffering: bool,
+    /// A window of feature frames extract from the input audio.
+    /// It grows until match the max_features_frames value.
     audio_features_window: Vec<Vec<f32>>,
-    min_detection_frames: usize,
-    max_detection_frames: usize,
+    /// Min number of feature frames on the wakewords.
+    min_features_frames: usize,
+    /// Max number of feature frames on the wakewords.
+    max_features_frames: usize,
+    /// Stores the partial detection with greater score while waiting for the detection countdown to be zero.
     partial_detection: Option<RustpotterDetection>,
-    spot_in_frames: usize,
+    /// Countdown until detection fires.
+    /// Whenever a better partial detection is found, it is set to the double of the max number of feature frames in the wakeword samples.
+    /// When it gets to zero and a partial detection exists, it'll be considered the final detection.
+    detection_countdown: usize,
 }
 
 impl Rustpotter {
+    /// Returns a configured Rustpotter instance.
     pub fn new(config: RustpotterConfig) -> Result<Rustpotter, &'static str> {
         let reencoder = WAVEncoder::new(
             &config.fmt,
@@ -70,66 +91,72 @@ impl Rustpotter {
         Ok(Rustpotter {
             avg_threshold: config.detector.avg_threshold,
             threshold: config.detector.threshold,
-            reencoder,
+            min_scores: config.detector.min_scores,
+            wav_encoder: reencoder,
             feature_extractor,
             feature_comparator,
             band_pass_filter,
             gain_normalizer_filter,
             audio_features_window: Vec::new(),
             buffering: true,
-            max_detection_frames: 0,
-            min_detection_frames: 0,
+            max_features_frames: 0,
+            min_features_frames: 0,
             wakewords: Vec::new(),
             partial_detection: None,
-            spot_in_frames: 0,
+            detection_countdown: 0,
         })
     }
+    /// Add wakeword
     pub fn add_wakeword(&mut self, wakeword: Wakeword) {
         self.wakewords.push(wakeword);
-        // update detection frame requirements and gain normalizer target rms level.
-        let mut min_frames = usize::MAX;
-        let mut max_frames = usize::MIN;
+        // update detection window requirements and gain normalizer target rms level.
+        let mut min_feature_frames = usize::MAX;
+        let mut max_feature_frames = usize::MIN;
         let mut rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
             if !wakeword.samples_features.is_empty() {
-                min_frames = wakeword
+                min_feature_frames = wakeword
                     .samples_features
                     .iter()
                     .map(|(_, feature_frames)| feature_frames.len())
                     .min()
                     .unwrap_or(0)
-                    .min(min_frames);
-                max_frames = wakeword
+                    .min(min_feature_frames);
+                max_feature_frames = wakeword
                     .samples_features
                     .iter()
                     .map(|(_, feature_frames)| feature_frames.len())
                     .max()
                     .unwrap_or(0)
-                    .max(max_frames);
+                    .max(max_feature_frames);
                 rms_level = wakeword.rms_level.max(rms_level);
             }
         }
-        self.min_detection_frames = min_frames;
-        self.max_detection_frames = max_frames;
+        self.min_features_frames = min_feature_frames;
+        self.max_features_frames = max_feature_frames;
         if self.gain_normalizer_filter.is_some() {
             self.gain_normalizer_filter
                 .as_mut()
                 .unwrap()
                 .target_rms_level = rms_level;
         }
-        self.buffering = self.audio_features_window.len() < self.min_detection_frames;
+        self.buffering = self.audio_features_window.len() < self.min_features_frames;
     }
+    /// Add wakeword from model bytes
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
         Ok(self.add_wakeword(Wakeword::load_from_buffer(buffer)?))
     }
+    /// Add wakeword from model path
     pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
         Ok(self.add_wakeword(Wakeword::load_from_file(path)?))
     }
+    /// Returns the number of audio samples needed by the detector.
     pub fn get_samples_per_frame(&self) -> usize {
-        self.reencoder.get_input_frame_length()
+        self.wav_encoder.get_input_frame_length()
     }
+    /// Returns the number of audio bytes needed by the detector.
     pub fn get_bytes_per_frame(&self) -> usize {
-        self.reencoder.get_input_byte_length()
+        self.wav_encoder.get_input_byte_length()
     }
     /// Process bytes buffer.
     ///
@@ -140,9 +167,9 @@ impl Rustpotter {
     ///
     /// Assumes buffer endianness matches the configured for the detector.
     ///
-    pub fn process_byte_buffer(&mut self, audio_buffer: Vec<u8>) -> Option<RustpotterDetection> {
-        let reencoded_audio_buffer = self.reencoder.encode(audio_buffer);
-        self.process_internal(reencoded_audio_buffer)
+    pub fn process_byte_buffer(&mut self, audio_bytes: Vec<u8>) -> Option<RustpotterDetection> {
+        let audio_buffer_encoded = self.wav_encoder.encode(audio_bytes);
+        self.process_internal(audio_buffer_encoded)
     }
     /// Process i32 audio chunks.
     ///
@@ -158,15 +185,15 @@ impl Rustpotter {
     /// It's an alias for the process_i32 method.
     pub fn process_short_int_buffer(
         &mut self,
-        audio_buffer: Vec<i16>,
+        audio_samples: Vec<i16>,
     ) -> Option<RustpotterDetection> {
-        let reencoded_audio_buffer = self.reencoder.reencode(
-            audio_buffer
+        let audio_buffer_encoded = self.wav_encoder.reencode(
+            audio_samples
                 .into_iter()
                 .map(|sample| sample as i32)
                 .collect(),
         );
-        self.process_internal(reencoded_audio_buffer)
+        self.process_internal(audio_buffer_encoded)
     }
     /// Process i32 audio chunks.
     ///
@@ -180,9 +207,9 @@ impl Rustpotter {
     /// Assumes that detector sample_format is 'int'.
     ///
     /// It's an alias for the process_i32 method.
-    pub fn process_int_buffer(&mut self, audio_buffer: Vec<i32>) -> Option<RustpotterDetection> {
-        let reencoded_audio_buffer = self.reencoder.reencode(audio_buffer);
-        self.process_internal(reencoded_audio_buffer)
+    pub fn process_int_buffer(&mut self, audio_samples: Vec<i32>) -> Option<RustpotterDetection> {
+        let audio_buffer_encoded = self.wav_encoder.reencode(audio_samples);
+        self.process_internal(audio_buffer_encoded)
     }
     /// Process f32 audio chunks.
     ///
@@ -194,9 +221,9 @@ impl Rustpotter {
     /// Requires that detector bits_per_sample is 32.
     ///
     /// Requires that detector sample_format is 'float'.
-    pub fn process_float_buffer(&mut self, audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
-        let reencoded_audio_buffer = self.reencoder.reencode_float(audio_buffer);
-        self.process_internal(reencoded_audio_buffer)
+    pub fn process_float_buffer(&mut self, audio_samples: Vec<f32>) -> Option<RustpotterDetection> {
+        let audio_buffer_encoded = self.wav_encoder.reencode_float(audio_samples);
+        self.process_internal(audio_buffer_encoded)
     }
     fn process_internal(&mut self, audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
         let mut processed_audio = audio_buffer;
@@ -212,29 +239,21 @@ impl Rustpotter {
                 .unwrap()
                 .filter(&mut processed_audio);
         }
-        let feature_matrix = self
-            .feature_extractor
+        self.feature_extractor
             .compute_features(&processed_audio)
-            .into_iter();
-        let mut optional_detection: Option<RustpotterDetection> = None;
-        for features in feature_matrix {
-            optional_detection = self.process_new_features(features);
-            if optional_detection.is_some() {
-                break;
-            }
-        }
-        optional_detection
+            .into_iter()
+            .find_map(|features| self.process_new_features(features))
     }
     fn process_new_features(&mut self, features: Vec<f32>) -> Option<RustpotterDetection> {
         let mut result: Option<RustpotterDetection> = None;
         self.audio_features_window.push(features);
-        if self.audio_features_window.len() >= self.min_detection_frames {
+        if self.audio_features_window.len() >= self.min_features_frames {
             if self.buffering {
                 self.buffering = false;
             }
             result = self.run_detection();
         }
-        if self.audio_features_window.len() >= self.max_detection_frames {
+        if self.audio_features_window.len() >= self.max_features_frames {
             self.audio_features_window.drain(0..1);
         }
         result
@@ -291,6 +310,7 @@ impl Rustpotter {
                         avg_score: avg_features_score,
                         score: max_score,
                         scores: wakeword_scores,
+                        counter: self.partial_detection.as_ref().map_or(1, |d| d.counter + 1),
                     })
                 } else {
                     None
@@ -300,15 +320,18 @@ impl Rustpotter {
         wakeword_detections
             .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         let wakeword_detection = wakeword_detections.into_iter().next();
-        if self.spot_in_frames != 0 {
-            self.spot_in_frames = self.spot_in_frames - 1;
+        if self.detection_countdown != 0 {
+            self.detection_countdown -= 1;
         }
-        if self.partial_detection.is_some() && self.spot_in_frames == 0 {
-            self.buffering = true;
-            self.audio_features_window.clear();
+        if self.partial_detection.is_some() && self.detection_countdown == 0 {
             let wakeword_detection = self.partial_detection.take().unwrap();
-            self.spot_in_frames = 0;
-            Some(wakeword_detection)
+            if wakeword_detection.counter > self.min_scores {
+                self.buffering = true;
+                self.audio_features_window.clear();
+                Some(wakeword_detection)
+            } else {
+                None
+            }
         } else {
             if wakeword_detection.is_some() {
                 if self.partial_detection.is_none()
@@ -316,8 +339,11 @@ impl Rustpotter {
                         < wakeword_detection.as_ref().unwrap().score
                 {
                     self.partial_detection = wakeword_detection;
+                } else {
+                    self.partial_detection.as_mut().unwrap().counter =
+                        wakeword_detection.as_ref().unwrap().counter;
                 }
-                self.spot_in_frames = self.max_detection_frames * 2;
+                self.detection_countdown = self.max_features_frames * 2;
             }
             None
         }
@@ -352,4 +378,6 @@ pub struct RustpotterDetection {
     pub score: f32,
     /// Detection scores against each template
     pub scores: HashMap<String, f32>,
+    /// Partial detections counter
+    pub counter: usize,
 }

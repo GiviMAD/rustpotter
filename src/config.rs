@@ -1,7 +1,7 @@
 use crate::{
     DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_THRESHOLD, DETECTOR_INTERNAL_BIT_DEPTH,
     DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-    FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+    FEATURE_COMPARATOR_DEFAULT_REFERENCE, DETECTOR_DEFAULT_MIN_SCORES,
 };
 
 /// Indicates the byte endianness
@@ -65,6 +65,8 @@ pub struct DetectorConfig {
     pub avg_threshold: f32,
     /// Minimum score against one of the sample features.
     pub threshold: f32,
+    /// Minimum number of positive scores during detection.
+    pub min_scores: usize,
     /// Feature comparator band size.
     pub comparator_band_size: u16,
     /// Feature comparator reference.
@@ -75,6 +77,7 @@ impl Default for DetectorConfig {
         DetectorConfig {
             avg_threshold: DETECTOR_DEFAULT_AVG_THRESHOLD,
             threshold: DETECTOR_DEFAULT_THRESHOLD,
+            min_scores: DETECTOR_DEFAULT_MIN_SCORES,
             comparator_band_size: FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
             comparator_reference: FEATURE_COMPARATOR_DEFAULT_REFERENCE,
         }
