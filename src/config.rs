@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// Indicates the byte endianness
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Endianness {
     Big,
     Little,
@@ -54,12 +54,19 @@ pub struct FiltersConfig {
 impl Default for FiltersConfig {
     fn default() -> FiltersConfig {
         FiltersConfig {
-            gain_normalizer: true,
-            band_pass: true,
+            gain_normalizer: false,
+            band_pass: false,
             low_cutoff: 80.,
             high_cutoff: 400.,
         }
     }
+}
+/// Indicates how to calculate the final score.
+#[derive(Clone, Copy)]
+pub enum ScoreMode {
+    Average,
+    Median,
+    Max,
 }
 /// Configures the detector scoring behavior.
 pub struct DetectorConfig {
@@ -69,6 +76,8 @@ pub struct DetectorConfig {
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
+    /// How to calculate the score.
+    pub score_mode: ScoreMode,
     /// Feature comparator band size.
     pub comparator_band_size: u16,
     /// Feature comparator reference.
@@ -80,6 +89,7 @@ impl Default for DetectorConfig {
             avg_threshold: DETECTOR_DEFAULT_AVG_THRESHOLD,
             threshold: DETECTOR_DEFAULT_THRESHOLD,
             min_scores: DETECTOR_DEFAULT_MIN_SCORES,
+            score_mode: ScoreMode::Max,
             comparator_band_size: FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
             comparator_reference: FEATURE_COMPARATOR_DEFAULT_REFERENCE,
         }

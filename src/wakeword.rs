@@ -178,19 +178,21 @@ fn compute_sample_features<R: std::io::Read>(
     // used to calculate measure wakeword samples loudness
     let gain_normalizer_filter = GainNormalizerFilter::new();
     let samples = wav_reader
-        .into_inner()
-        .buffer()
-        .chunks_exact(encoder.get_input_byte_length())
-        .map(|buffer| encoder.encode(buffer))
+        .into_samples::<i32>()
+        .map(|chunk| *chunk.as_ref().unwrap())
+        .collect::<Vec<_>>();
+    let encoded_samples = samples
+        .chunks_exact(encoder.get_input_frame_length())
+        .map(|buffer| encoder.reencode(buffer))
         .fold(Vec::new(), |mut acc, mut i| {
             acc.append(&mut i);
             acc
         });
-    *out_rms_level = gain_normalizer_filter.get_rms_level(&samples);
-    let sample_features = samples
+    *out_rms_level = gain_normalizer_filter.get_rms_level(&encoded_samples);
+    let sample_features = encoded_samples
         .as_slice()
         .chunks_exact(encoder.get_output_frame_length())
-        .map(|samples| feature_extractor.compute_features(&samples))
+        .map(|samples_chunk| feature_extractor.compute_features(&samples_chunk))
         .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, feature_matrix| {
             for features in feature_matrix {
                 acc.push(features);

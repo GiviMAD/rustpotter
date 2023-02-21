@@ -19,6 +19,7 @@ pub use config::Endianness;
 pub use config::FiltersConfig;
 pub use config::RustpotterConfig;
 pub use config::SampleFormat;
+pub use config::ScoreMode;
 pub use config::WavFmt;
 pub use detector::Rustpotter;
 pub use detector::RustpotterDetection;
