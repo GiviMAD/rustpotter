@@ -387,7 +387,7 @@ impl Rustpotter {
     }
 }
 /// Encapsulates the detection information.
-#[derive(Debug)]
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub struct RustpotterDetection {
     /// Detected wakeword name.
     pub name: String,

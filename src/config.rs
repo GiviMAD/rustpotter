@@ -5,6 +5,7 @@ use crate::{
 };
 
 /// Indicates the byte endianness
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy)]
 pub enum Endianness {
     Big,
@@ -15,6 +16,7 @@ pub enum Endianness {
 pub type SampleFormat = hound::SampleFormat;
 
 /// Wav format representation
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub struct WavFmt {
     /// Indicates the sample rate of the input audio stream.
     pub sample_rate: usize,
@@ -39,6 +41,7 @@ impl Default for WavFmt {
     }
 }
 /// Configures the audio filters used by the detector.
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub struct FiltersConfig {
     /// Enables a gain-normalizer audio filter that normalize the loudness of each input sample buffer
     /// with respect to the loudness wakeword sample (the RMS level is used as loudness measure).
@@ -62,6 +65,7 @@ impl Default for FiltersConfig {
     }
 }
 /// Indicates how to calculate the final score.
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy)]
 pub enum ScoreMode {
     Average,
@@ -69,6 +73,7 @@ pub enum ScoreMode {
     Max,
 }
 /// Configures the detector scoring behavior.
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub struct DetectorConfig {
     /// Minimum required score against the wakeword averaged feature frame vector.
     pub avg_threshold: f32,
@@ -96,6 +101,7 @@ impl Default for DetectorConfig {
     }
 }
 /// Encapsulates all the tool configurations.
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub struct RustpotterConfig {
     /// configures expected wav input format.
     pub fmt: WavFmt,
