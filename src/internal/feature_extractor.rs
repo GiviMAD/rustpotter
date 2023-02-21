@@ -83,7 +83,6 @@ impl FeatureExtractor {
             );
             samples.push(transformed)
         }
-
         samples
     }
 
