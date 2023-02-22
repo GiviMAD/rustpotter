@@ -96,8 +96,8 @@ impl WAVEncoder {
         target_sample_rate: usize,
         target_bits_per_sample: u16,
     ) -> Result<WAVEncoder, &'static str> {
-        let mut input_samples_per_frame = input_spec.sample_rate * frame_length_ms / 1000;
-        let mut output_samples_per_frame = input_samples_per_frame;
+        let mut input_samples_per_frame = (input_spec.sample_rate * frame_length_ms / 1000) * input_spec.channels as usize;
+        let mut output_samples_per_frame = input_spec.sample_rate * frame_length_ms / 1000;
         let allowed_bits_per_sample = vec![8, 16, 24, 32];
         if !allowed_bits_per_sample.contains(&input_spec.bits_per_sample) {
             Err("Unsupported bits per sample")
@@ -114,7 +114,7 @@ impl WAVEncoder {
                 let resampler = FftFixedInOut::<f32>::new(
                     input_spec.sample_rate,
                     target_sample_rate,
-                    input_samples_per_frame,
+                    output_samples_per_frame,
                     1,
                 )
                 .map_err(|_| "Unsupported sample rate, unable to initialize the resampler")?;
