@@ -2,6 +2,10 @@
 name = "rustpotter"
 version = "2.0.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "An open source wakeword spotter forged in rust."
+authors = ["Miguel Álvarez Díez <miguelwork92@gmail.com>"]
+repository = "https://github.com/GiviMAD/rustpotter"
 
 [dependencies]
 ciborium = "0.2.0"
