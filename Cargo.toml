@@ -6,6 +6,13 @@ license = "Apache-2.0"
 description = "An open source wakeword spotter forged in rust."
 authors = ["Miguel Álvarez Díez <miguelwork92@gmail.com>"]
 repository = "https://github.com/GiviMAD/rustpotter"
+exclude = [
+    ".vscode/*",
+    "tests/*",
+    "tools/*",
+    "*.png",
+    ".gitignore",
+]
 
 [dependencies]
 ciborium = "0.2.0"
