@@ -85,7 +85,7 @@ impl Rustpotter {
             / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)
                 as f32) as usize;
         let feature_extractor = FeatureExtractor::new(
-            config.fmt.sample_rate,
+            DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
             FEATURE_EXTRACTOR_NUM_COEFFICIENT,
@@ -201,7 +201,7 @@ impl Rustpotter {
         &mut self,
         audio_samples: &[i16],
     ) -> Option<RustpotterDetection> {
-        let mut encoded_samples = self.wav_encoder.reencode(
+        let mut encoded_samples = self.wav_encoder.reencode_int(
             &audio_samples
                 .into_iter()
                 .map(|sample| *sample as i32)
@@ -220,7 +220,7 @@ impl Rustpotter {
     ///
     /// Assumes that detector sample_format is 'int'.
     pub fn process_int_buffer(&mut self, audio_samples: &[i32]) -> Option<RustpotterDetection> {
-        let mut encoded_samples = self.wav_encoder.reencode(audio_samples);
+        let mut encoded_samples = self.wav_encoder.reencode_int(audio_samples);
         self.process_internal(&mut encoded_samples)
     }
     /// Process f32 audio chunks.

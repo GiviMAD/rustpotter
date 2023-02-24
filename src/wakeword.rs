@@ -8,7 +8,7 @@ use crate::{
         Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, GainNormalizerFilter,
         WAVEncoder,
     },
-    Endianness, WavFmt, DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
+    Endianness, SampleFormat, WavFmt, DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
     FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
     FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
 };
@@ -169,7 +169,7 @@ fn compute_sample_features<R: std::io::Read>(
         / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)
             as f32) as usize;
     let mut feature_extractor = FeatureExtractor::new(
-        fmt.sample_rate,
+        DETECTOR_INTERNAL_SAMPLE_RATE,
         samples_per_frame,
         samples_per_shift,
         FEATURE_EXTRACTOR_NUM_COEFFICIENT,
@@ -177,17 +177,31 @@ fn compute_sample_features<R: std::io::Read>(
     );
     // used to calculate measure wakeword samples loudness
     let gain_normalizer_filter = GainNormalizerFilter::new();
-    let samples = wav_reader
-        .into_samples::<i32>()
-        .map(|chunk| *chunk.as_ref().unwrap())
-        .collect::<Vec<_>>();
-    let encoded_samples = samples
-        .chunks_exact(encoder.get_input_frame_length())
-        .map(|buffer| encoder.reencode(buffer))
-        .fold(Vec::new(), |mut acc, mut i| {
-            acc.append(&mut i);
-            acc
-        });
+    let encoded_samples = if wav_reader.spec().sample_format == SampleFormat::Int {
+        let samples = wav_reader
+            .into_samples::<i32>()
+            .map(|chunk| *chunk.as_ref().unwrap())
+            .collect::<Vec<_>>();
+        samples
+            .chunks_exact(encoder.get_input_frame_length())
+            .map(|buffer| encoder.reencode_int(buffer))
+            .fold(Vec::new(), |mut acc, mut i| {
+                acc.append(&mut i);
+                acc
+            })
+    } else {
+        let samples = wav_reader
+            .into_samples::<f32>()
+            .map(|chunk| *chunk.as_ref().unwrap())
+            .collect::<Vec<_>>();
+        samples
+            .chunks_exact(encoder.get_input_frame_length())
+            .map(|buffer| encoder.reencode_float(buffer))
+            .fold(Vec::new(), |mut acc, mut i| {
+                acc.append(&mut i);
+                acc
+            })
+    };
     *out_rms_level = gain_normalizer_filter.get_rms_level(&encoded_samples);
     let sample_features = encoded_samples
         .as_slice()
