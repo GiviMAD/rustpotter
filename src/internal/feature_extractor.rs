@@ -1,18 +1,17 @@
 use rustfft::{num_complex::Complex32, FftPlanner};
 
-use super::{MIN_I16_ABS_VAL, MAX_I16_VAL};
+use super::{MAX_I16_VAL, MIN_I16_ABS_VAL};
 
 pub struct FeatureExtractor {
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
-    sample_rate: usize,
     samples_per_frame: usize,
     block_size: usize,
+    magnitude_spectrum_size: usize,
+    filter_bank: Vec<Vec<f32>>,
+    hamming_window: Vec<f32>,
+    // state
     samples: Vec<f32>,
-    filter_bank: Option<Vec<Vec<f32>>>,
-    hamming_window: Option<Vec<f32>>,
-    min_frequency: usize,
-    max_frequency: usize,
 }
 
 impl FeatureExtractor {
@@ -22,25 +21,26 @@ impl FeatureExtractor {
         samples_per_shift: usize,
         num_coefficients: usize,
         pre_emphasis_coefficient: f32,
-    ) -> Self {
-        let mut extractor = FeatureExtractor {
+    ) -> FeatureExtractor {
+        let min_frequency = 0;
+        let max_frequency = sample_rate / 2;
+        let magnitude_spectrum_size = samples_per_frame / 2;
+        FeatureExtractor {
             samples: vec![],
-            sample_rate,
             block_size: samples_per_shift * sample_rate / 8000,
             samples_per_frame,
             pre_emphasis_coefficient,
             num_coefficients,
-            min_frequency: 0,
-            max_frequency: sample_rate / 2,
-            filter_bank: None,
-            hamming_window: None,
-        };
-        extractor.calculate_mel_filter_bank();
-        extractor.create_hamming_window();
-        extractor
-    }
-    fn get_magnitude_spectrum_size(&self) -> usize {
-        self.samples_per_frame / 2
+            magnitude_spectrum_size,
+            filter_bank: Self::new_mel_filter_bank(
+                sample_rate,
+                magnitude_spectrum_size,
+                num_coefficients,
+                min_frequency,
+                max_frequency,
+            ),
+            hamming_window: Self::new_hamming_window(samples_per_frame),
+        }
     }
     pub fn compute_features(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
         // Remove extra bytes
@@ -56,6 +56,9 @@ impl FeatureExtractor {
             .filter(Option::is_some)
             .map(Option::unwrap)
             .collect()
+    }
+    pub fn reset(&mut self) {
+        self.samples.clear();
     }
     fn process_audio_part(&mut self, audio_buffer: &[f32]) -> Option<Vec<f32>> {
         let mut new_samples = self.pre_emphasis(&audio_buffer);
@@ -94,39 +97,32 @@ impl FeatureExtractor {
     }
 
     //==================================================================
-    // ported from Gist C++ audio library
+    // Feature extraction utils
     fn calculate_magnitude_spectrum(&self, audio_frame: &[f32]) -> Vec<f32> {
-        if self.hamming_window.is_none() {
-            return Vec::new();
-        }
         let mut buffer = vec![];
-        let window = self.hamming_window.as_ref().unwrap();
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(self.samples_per_frame);
         for _i in 0..self.samples_per_frame {
             buffer.push(Complex32 {
-                re: audio_frame[_i] * window[_i],
+                re: audio_frame[_i] * self.hamming_window[_i],
                 im: 0.,
             });
         }
         fft.process(&mut buffer);
         let mut magnitude_spectrum: Vec<f32> = Vec::with_capacity(buffer.len());
-        for _i in 0..self.get_magnitude_spectrum_size() {
+        for _i in 0..self.magnitude_spectrum_size {
             magnitude_spectrum
                 .push(((buffer[_i].re * buffer[_i].re) + (buffer[_i].im * buffer[_i].im)).sqrt());
         }
         magnitude_spectrum
     }
-    fn create_hamming_window(&mut self) {
-        let mut window = vec![];
-        let num_samples_minus_1 = self.samples_per_frame - 1; // the number of samples minus 1
-        for i in 0..self.samples_per_frame {
-            window.push(
-                0.54 - (0.46
-                    * (2. * std::f32::consts::PI * (i as f32 / num_samples_minus_1 as f32)).cos()),
-            );
-        }
-        self.hamming_window = Some(window);
+    fn new_hamming_window(samples_per_frame: usize) -> Vec<f32> {
+        let ns_minus_1 = samples_per_frame - 1;
+        (0..samples_per_frame)
+            .map(|s| {
+                0.54 - (0.46 * (2. * std::f32::consts::PI * (s as f32 / ns_minus_1 as f32)).cos())
+            })
+            .collect()
     }
     fn calculate_mel_frequency_cepstral_coefficients(
         &self,
@@ -141,19 +137,15 @@ impl FeatureExtractor {
         mfccs = self.discrete_cosine_transform(mfccs);
         mfccs
     }
-    fn frequency_to_mel(&self, frequency: usize) -> f32 {
+    fn frequency_to_mel(frequency: usize) -> f32 {
         return 1127. * (1. + (frequency as f32 / 700.0)).ln();
     }
     fn calculate_mel_frequency_spectrum(&self, magnitude_spectrum: &[f32]) -> Vec<f32> {
-        if self.filter_bank.is_none() {
-            return Vec::new();
-        }
-        let filter_bank = self.filter_bank.as_ref().unwrap();
         let mut mel_spectrum: Vec<f32> = Vec::new();
         for i in 0..self.num_coefficients {
             let mut coeff = 0.;
             for j in 0..magnitude_spectrum.len() {
-                let filter_bank_val = filter_bank[i][j];
+                let filter_bank_val = self.filter_bank[i][j];
                 coeff += (magnitude_spectrum[j] * magnitude_spectrum[j]) * filter_bank_val;
             }
             mel_spectrum.push(coeff);
@@ -179,24 +171,28 @@ impl FeatureExtractor {
         }
         input_signal
     }
-    fn calculate_mel_filter_bank(&mut self) {
-        let max_mel = self.frequency_to_mel(self.max_frequency).floor();
-        let min_mel = self.frequency_to_mel(self.min_frequency).floor();
+    fn new_mel_filter_bank(
+        sample_rate: usize,
+        magnitude_spectrum_size: usize,
+        num_coefficients: usize,
+        min_frequency: usize,
+        max_frequency: usize,
+    ) -> Vec<Vec<f32>> {
+        let max_mel = Self::frequency_to_mel(max_frequency).floor();
+        let min_mel = Self::frequency_to_mel(min_frequency).floor();
 
-        let mut filter_bank =
-            vec![vec![0.; self.get_magnitude_spectrum_size()]; self.num_coefficients];
+        let mut filter_bank = vec![vec![0.; magnitude_spectrum_size]; num_coefficients];
         let mut centre_indices: Vec<usize> = Vec::new();
 
-        for i in 0..self.num_coefficients + 2 {
-            let f = i as f32 * (max_mel - min_mel) as f32 / (self.num_coefficients + 1) as f32
-                + min_mel;
+        for i in 0..num_coefficients + 2 {
+            let f = i as f32 * (max_mel - min_mel) as f32 / (num_coefficients + 1) as f32 + min_mel;
             let mut tmp = (1 as f32 + 1000.0 / 700.0).ln() / 1000.0;
-            tmp = ((f as f32 * tmp).exp() - 1.) / (self.sample_rate as f32 / 2 as f32);
-            tmp = 0.5 + 700. * self.get_magnitude_spectrum_size() as f32 * tmp;
+            tmp = ((f as f32 * tmp).exp() - 1.) / (sample_rate as f32 / 2 as f32);
+            tmp = 0.5 + 700. * magnitude_spectrum_size as f32 * tmp;
             let centre_index = tmp.floor() as usize;
             centre_indices.push(centre_index);
         }
-        for i in 0..self.num_coefficients {
+        for i in 0..num_coefficients {
             let filter_begin_index = centre_indices[i];
             let filter_center_index = centre_indices[i + 1];
             let filter_end_index = centre_indices[i + 2];
@@ -213,6 +209,6 @@ impl FeatureExtractor {
                 filter_bank[i][k] = (filter_end_index - k) as f32 / triangle_range_down as f32;
             }
         }
-        self.filter_bank = Option::Some(filter_bank)
+        filter_bank
     }
 }

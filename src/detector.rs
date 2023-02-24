@@ -197,10 +197,7 @@ impl Rustpotter {
     /// Assumes that detector bits_per_sample is one of: 8, 16.
     ///
     /// Assumes that detector sample_format is 'int'.
-    pub fn process_short_buffer(
-        &mut self,
-        audio_samples: &[i16],
-    ) -> Option<RustpotterDetection> {
+    pub fn process_short_buffer(&mut self, audio_samples: &[i16]) -> Option<RustpotterDetection> {
         let mut encoded_samples = self.wav_encoder.reencode_int(
             &audio_samples
                 .into_iter()
@@ -345,6 +342,7 @@ impl Rustpotter {
             if wakeword_detection.counter > self.min_scores {
                 self.buffering = true;
                 self.audio_features_window.clear();
+                self.feature_extractor.reset();
                 Some(wakeword_detection)
             } else {
                 None
