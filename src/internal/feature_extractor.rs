@@ -1,5 +1,7 @@
 use rustfft::{num_complex::Complex32, FftPlanner};
 
+use super::{MIN_I16_ABS_VAL, MAX_I16_VAL};
+
 pub struct FeatureExtractor {
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
@@ -78,10 +80,15 @@ impl FeatureExtractor {
         for i in 0..audio_buffer.len() {
             let current = audio_buffer[i];
             let previous = if i != 0 { audio_buffer[i - 1] } else { 0. };
-            let transformed = convert_int16_to_float32(
-                current as f32 - self.pre_emphasis_coefficient * previous as f32,
-            );
-            samples.push(transformed)
+            let sample_with_pre_emphasis =
+                current as f32 - self.pre_emphasis_coefficient * previous as f32;
+            // convert to float sample
+            let float_sample = if sample_with_pre_emphasis < 0. {
+                sample_with_pre_emphasis / MIN_I16_ABS_VAL
+            } else {
+                sample_with_pre_emphasis / MAX_I16_VAL
+            };
+            samples.push(float_sample.clamp(-1., 1.));
         }
         samples
     }
@@ -208,9 +215,4 @@ impl FeatureExtractor {
         }
         self.filter_bank = Option::Some(filter_bank)
     }
-}
-
-fn convert_int16_to_float32(n: f32) -> f32 {
-    let v = if n < 0. { n / 32768. } else { n / 32767. }; // convert in range [-32768, 32767]
-    return v.clamp(-1., 1.);
 }

@@ -2,6 +2,7 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::config::{Endianness, SampleFormat, WavFmt};
 
+use super::{MIN_I16_ABS_VAL, MAX_I16_VAL, MIN_I16_VAL};
 /**
  * Encode and convert to wav samples in internal rustpotter format
  */
@@ -71,12 +72,13 @@ impl WAVEncoder {
             .iter()
             .map(|sample| {
                 let sample_value = *sample;
-                let cvt_value = if sample_value < 0. {
-                    (sample_value * 32768.) as i32 as f32
+                // change format to i16 samples
+                if sample_value < 0. {
+                    (sample_value * MIN_I16_ABS_VAL) as i32 as f32
                 } else {
-                    (sample_value * 32767.) as i32 as f32
-                };
-                cvt_value.min(32767.).max(-32768.)
+                    (sample_value * MAX_I16_VAL) as i32 as f32
+                }
+                .clamp(MIN_I16_VAL, MAX_I16_VAL) as i32 as f32
             })
             .collect::<Vec<f32>>()
     }

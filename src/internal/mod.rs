@@ -1,3 +1,7 @@
+pub(self) const MIN_I16_ABS_VAL: f32 = (i16::MIN as f32) * -1.;
+pub(self) const MIN_I16_VAL: f32 = i16::MIN as f32;
+pub(self) const MAX_I16_VAL: f32 = i16::MAX as f32;
+
 mod band_pass_filter;
 mod comparator;
 mod dtw;
