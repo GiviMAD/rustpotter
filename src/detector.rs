@@ -24,7 +24,7 @@ use crate::{
 /// let mut frame_buffer: Vec<i16> = vec![0; detector.get_samples_per_frame()];
 /// // while true { Iterate forever
 ///     // fill the buffer with the required samples/bytes...
-///     let detection_option = detector.process_short_int_buffer(&frame_buffer);
+///     let detection_option = detector.process_short_buffer(&frame_buffer);
 ///     if detection_option.is_some() {
 ///         let detection = detection_option.unwrap();
 ///         // println!("{:?}", detection);
