@@ -197,7 +197,7 @@ impl Rustpotter {
     /// Assumes that detector bits_per_sample is one of: 8, 16.
     ///
     /// Assumes that detector sample_format is 'int'.
-    pub fn process_short_int_buffer(
+    pub fn process_short_buffer(
         &mut self,
         audio_samples: &[i16],
     ) -> Option<RustpotterDetection> {
