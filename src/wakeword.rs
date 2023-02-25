@@ -69,6 +69,9 @@ impl Wakeword {
         rms_level: f32,
         samples_features: HashMap<String, Vec<Vec<f32>>>,
     ) -> Result<Wakeword, String> {
+        if samples_features.len() == 0 {
+            return Err("Can not create an empty wakeword".to_string());
+        }
         Ok(Wakeword {
             name,
             threshold,
@@ -113,7 +116,7 @@ impl Wakeword {
         samples: Vec<String>,
     ) -> Result<Wakeword, String> {
         let mut samples_features: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
-        let mut rms_level = 0.;
+        let mut rms_levels: Vec<f32> = Vec::new();
         for sample_path in samples {
             let path = Path::new(&sample_path);
             if !path.exists() || !path.is_file() {
@@ -132,10 +135,9 @@ impl Wakeword {
                 String::from(path.file_name().unwrap().to_str().unwrap()),
                 compute_sample_features(BufReader::new(file), &mut sample_rms_level)?,
             );
-            if sample_rms_level > rms_level {
-                rms_level = sample_rms_level;
-            }
+            rms_levels.push(sample_rms_level);
         }
+        let rms_level = calc_median(rms_levels);
         Wakeword::new(
             name,
             threshold,
@@ -146,6 +148,7 @@ impl Wakeword {
         )
     }
 }
+
 fn compute_sample_features<R: std::io::Read>(
     buffer_reader: BufReader<R>,
     out_rms_level: &mut f32,
@@ -174,7 +177,7 @@ fn compute_sample_features<R: std::io::Read>(
         FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     );
-    // used to calculate measure wakeword samples loudness
+    let mut rms_levels: Vec<f32> = Vec::new();
     let encoded_samples = if wav_reader.spec().sample_format == SampleFormat::Int {
         let samples = wav_reader
             .into_samples::<i32>()
@@ -183,6 +186,10 @@ fn compute_sample_features<R: std::io::Read>(
         samples
             .chunks_exact(encoder.get_input_frame_length())
             .map(|buffer| encoder.reencode_int(buffer))
+            .map(|encoded_buffer| {
+                rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
+                encoded_buffer
+            })
             .fold(Vec::new(), |mut acc, mut i| {
                 acc.append(&mut i);
                 acc
@@ -195,12 +202,18 @@ fn compute_sample_features<R: std::io::Read>(
         samples
             .chunks_exact(encoder.get_input_frame_length())
             .map(|buffer| encoder.reencode_float(buffer))
+            .map(|encoded_buffer| {
+                rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
+                encoded_buffer
+            })
             .fold(Vec::new(), |mut acc, mut i| {
                 acc.append(&mut i);
                 acc
             })
     };
-    *out_rms_level = GainNormalizerFilter::get_rms_level(&encoded_samples);
+    if rms_levels.len() > 0 {
+        *out_rms_level = calc_median(rms_levels);
+    }
     let sample_features = encoded_samples
         .as_slice()
         .chunks_exact(encoder.get_output_frame_length())
@@ -262,4 +275,16 @@ fn compute_avg_samples_features(
             .collect::<Vec<_>>();
     }
     Some(origin)
+}
+
+fn calc_median(mut values: Vec<f32>) -> f32 {
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    let truncated_mid = values.len() / 2;
+    if values.len() == 0 {
+        0.
+    } else if truncated_mid != 0 && values.len() % 2 == 0 {
+        values[truncated_mid] + values[truncated_mid - 1]
+    } else {
+        values[truncated_mid]
+    }
 }

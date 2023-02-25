@@ -128,7 +128,7 @@ impl Rustpotter {
             partial_detection: None,
             detection_countdown: 0,
             rms_level: 0.,
-            gain: 0.,
+            gain: 1.,
         })
     }
     /// Add wakeword
@@ -322,7 +322,7 @@ impl Rustpotter {
                     ScoreMode::Max => sorted_scores[0],
                     ScoreMode::Median => {
                         let trunc_mid = sorted_scores.len() / 2;
-                        if sorted_scores.len() % 2 == 0 {
+                        if trunc_mid != 0 && sorted_scores.len() % 2 == 0 {
                             (sorted_scores[trunc_mid] + sorted_scores[trunc_mid - 1]) / 2.
                         } else {
                             sorted_scores[trunc_mid]
@@ -339,6 +339,7 @@ impl Rustpotter {
                         score,
                         scores,
                         counter: self.partial_detection.as_ref().map_or(1, |d| d.counter + 1),
+                        gain: self.gain,
                     })
                 } else {
                     None
@@ -408,4 +409,6 @@ pub struct RustpotterDetection {
     pub scores: HashMap<String, f32>,
     /// Partial detections counter.
     pub counter: usize,
+    /// Gain applied to the scored frame
+    pub gain: f32,
 }

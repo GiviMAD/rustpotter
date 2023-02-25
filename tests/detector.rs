@@ -93,8 +93,8 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
     let detected_wakewords =
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 3.5, 30.3);
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].score, 0.7249059);
-    assert_eq!(detected_wakewords[1].score, 0.6621143);
+    assert_eq!(detected_wakewords[0].score, 0.7238521);
+    assert_eq!(detected_wakewords[1].score, 0.6617261);
 }
 
 #[test]
@@ -110,8 +110,8 @@ fn it_can_detect_wakewords_while_applying_band_pass_and_gain_normalizer_audio_fi
     let detected_wakewords =
     run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 3.5, 30.3);
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].score, 0.58681536);
-    assert_eq!(detected_wakewords[1].score, 0.5847102);
+    assert_eq!(detected_wakewords[0].score, 0.5891921);
+    assert_eq!(detected_wakewords[1].score, 0.5874163);
 }
 
 fn run_detection_simulation(

@@ -5,8 +5,7 @@ impl GainNormalizerFilter {
     pub fn filter(&self, signal: &mut [f32], rms_level: f32) -> f32 {
         if self.target_rms_level != f32::NAN && rms_level != 0. {
             let mut gain = self.target_rms_level / rms_level;
-            // only apply to frames that are at least twice over or at least half the reference level
-            if gain <= 0.5 || (1.5 < gain && gain <= 2.) {
+            if gain <= 20. && gain != 1. {
                 gain = (gain * 10.).round() / 10.;
                 for sample in signal {
                     *sample *= gain;
