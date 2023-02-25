@@ -14,10 +14,10 @@ fn it_can_detect_wakewords() {
     config.filters.band_pass = false;
     let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].avg_score, 0.38723305);
+    assert_eq!(detected_wakewords[0].avg_score, 0.38723248);
     assert_eq!(detected_wakewords[0].score, 0.7310586);
-    assert_eq!(detected_wakewords[1].avg_score, 0.35448554);
-    assert_eq!(detected_wakewords[1].score, 0.72184294);
+    assert_eq!(detected_wakewords[1].avg_score, 0.3544849);
+    assert_eq!(detected_wakewords[1].score, 0.721843);
 }
 
 #[test]
@@ -44,8 +44,8 @@ fn it_can_detect_wakewords_while_applying_band_pass_audio_filter() {
     config.filters.high_cutoff = 400.0;
     let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].score, 0.6862823);
-    assert_eq!(detected_wakewords[1].score, 0.66147876);
+    assert_eq!(detected_wakewords[0].score, 0.6858197);
+    assert_eq!(detected_wakewords[1].score, 0.66327363);
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 3.5, 30.3);
     assert_eq!(detected_wakewords.len(), 2);
     assert_eq!(detected_wakewords[0].score, 0.7249059);
-    assert_eq!(detected_wakewords[1].score, 0.6621149);
+    assert_eq!(detected_wakewords[1].score, 0.6621143);
 }
 
 #[test]
@@ -74,8 +74,8 @@ fn it_can_detect_wakewords_while_applying_band_pass_and_gain_normalizer_audio_fi
     let detected_wakewords =
     run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 3.5, 30.3);
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].score, 0.6752711);
-    assert_eq!(detected_wakewords[1].score, 0.6533812);
+    assert_eq!(detected_wakewords[0].score, 0.6720387);
+    assert_eq!(detected_wakewords[1].score, 0.6527408);
 }
 
 fn run_detection_simulation(

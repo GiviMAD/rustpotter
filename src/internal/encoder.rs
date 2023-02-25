@@ -2,7 +2,6 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::config::{Endianness, SampleFormat, WavFmt};
 
-use super::{MIN_I16_ABS_VAL, MAX_I16_VAL, MIN_I16_VAL};
 /**
  * Encode and convert to wav samples in internal rustpotter format
  */
@@ -12,10 +11,8 @@ pub(crate) struct WAVEncoder {
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
     source_sample_format: SampleFormat,
     source_bits_per_sample: u16,
-    source_int_bits_per_sample: u16,
     source_channels: u16,
     source_endianness: Endianness,
-    target_bits_per_sample: u16,
     input_samples_per_frame: usize,
     output_samples_per_frame: usize,
 }
@@ -32,55 +29,35 @@ impl WAVEncoder {
     }
     pub fn encode(&mut self, buffer: &[u8]) -> Vec<f32> {
         match self.source_sample_format {
-            SampleFormat::Int => {
-                let bits_per_sample = self.source_bits_per_sample;
-                let endianness = self.source_endianness.clone();
-                self.reencode_int(&encode_int_audio_bytes(buffer, bits_per_sample, endianness))
-            }
-            SampleFormat::Float => {
-                let bits_per_sample = self.source_bits_per_sample;
-                let endianness = self.source_endianness.clone();
-                self.reencode_float(&encode_float_audio_bytes(
-                    buffer,
-                    bits_per_sample,
-                    endianness,
-                ))
-            }
+            SampleFormat::Int => self.reencode_int(&encode_int_audio_bytes(
+                buffer,
+                self.source_bits_per_sample,
+                self.source_endianness,
+            )),
+            SampleFormat::Float => self.reencode_float(&encode_float_audio_bytes(
+                buffer,
+                self.source_bits_per_sample,
+                self.source_endianness,
+            )),
         }
     }
     pub fn reencode_int(&mut self, buffer: &[i32]) -> Vec<f32> {
         self.reencode_to_mono_with_sample_rate(
             &buffer
-                .chunks_exact(self.source_channels as usize)
-                .map(|chunk| chunk[0])
+                .into_iter()
                 .map(|s| {
-                    if self.source_int_bits_per_sample == self.target_bits_per_sample {
-                        s as f32
-                    } else if self.source_int_bits_per_sample < self.target_bits_per_sample {
-                        (s << (self.target_bits_per_sample - self.source_int_bits_per_sample))
-                            as f32
-                    } else {
-                        (s >> (self.source_int_bits_per_sample - self.target_bits_per_sample))
-                            as f32
+                    match self.source_bits_per_sample {
+                        8 => *s as f32 / i8::MAX as f32,
+                        16 => *s as f32 / i16::MAX as f32,
+                        _ => *s as f32 / i32::MAX as f32,
                     }
+                    .clamp(-1., 1.)
                 })
                 .collect::<Vec<f32>>(),
         )
     }
     pub fn reencode_float(&mut self, audio_chunk: &[f32]) -> Vec<f32> {
         self.reencode_to_mono_with_sample_rate(audio_chunk)
-            .iter()
-            .map(|sample| {
-                let sample_value = *sample;
-                // change format to i16 samples
-                if sample_value < 0. {
-                    (sample_value * MIN_I16_ABS_VAL) as i32 as f32
-                } else {
-                    (sample_value * MAX_I16_VAL) as i32 as f32
-                }
-                .clamp(MIN_I16_VAL, MAX_I16_VAL) as i32 as f32
-            })
-            .collect::<Vec<f32>>()
     }
     fn reencode_to_mono_with_sample_rate(&mut self, buffer: &[f32]) -> Vec<f32> {
         let mono_buffer = if self.source_channels != 1 {
@@ -109,7 +86,6 @@ impl WAVEncoder {
         input_spec: &WavFmt,
         frame_length_ms: usize,
         target_sample_rate: usize,
-        target_bits_per_sample: u16,
     ) -> Result<WAVEncoder, &'static str> {
         let mut input_samples_per_frame =
             input_spec.sample_rate * frame_length_ms / 1000 * input_spec.channels as usize;
@@ -143,7 +119,6 @@ impl WAVEncoder {
             Ok(WAVEncoder {
                 input_samples_per_frame,
                 output_samples_per_frame,
-                target_bits_per_sample,
                 resampler_out_buffer: if resampler.is_some() {
                     Some(resampler.as_ref().unwrap().output_buffer_allocate())
                 } else {
@@ -155,12 +130,6 @@ impl WAVEncoder {
                     None
                 },
                 resampler,
-                source_int_bits_per_sample: if input_spec.sample_format == SampleFormat::Int {
-                    input_spec.bits_per_sample
-                } else {
-                    // float is re-encoded to 16bit int internally
-                    16
-                },
                 source_bits_per_sample: input_spec.bits_per_sample,
                 source_sample_format: input_spec.sample_format,
                 source_channels: input_spec.channels,
@@ -255,7 +224,6 @@ fn it_returns_correct_samples_per_frame() {
         &wav_spec,
         crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         crate::DETECTOR_INTERNAL_SAMPLE_RATE,
-        crate::DETECTOR_INTERNAL_BIT_DEPTH,
     )
     .unwrap();
     let input_length = encoder.get_input_frame_length();
@@ -269,11 +237,11 @@ fn it_returns_correct_samples_per_frame() {
 }
 
 #[test]
-fn reencode_wav_with_different_format_and_rate() {
+fn reencode_wav_with_different_format() {
     let dir = env!("CARGO_MANIFEST_DIR");
-    let f32_samples_file =
-        std::fs::File::open(dir.to_owned() + "/tests/resources/test_f32.wav").unwrap();
-    let wav_reader = hound::WavReader::new(std::io::BufReader::new(f32_samples_file)).unwrap();
+    let i16_samples_file =
+        std::fs::File::open(dir.to_owned() + "/tests/resources/oye_casa_g_1.wav").unwrap();
+    let wav_reader = hound::WavReader::new(std::io::BufReader::new(i16_samples_file)).unwrap();
     let wav_spec = WavFmt {
         sample_rate: wav_reader.spec().sample_rate as usize,
         sample_format: wav_reader.spec().sample_format,
@@ -286,38 +254,37 @@ fn reencode_wav_with_different_format_and_rate() {
         &wav_spec,
         crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         crate::DETECTOR_INTERNAL_SAMPLE_RATE,
-        crate::DETECTOR_INTERNAL_BIT_DEPTH,
     )
     .unwrap();
     let input_length = encoder.get_input_frame_length();
     let output_length = encoder.get_output_frame_length();
-    assert_ne!(
+    assert_eq!(
         input_length, output_length,
         "input and output have same length"
     );
-    assert_eq!(input_length, 1440, "input size is correct");
+    assert_eq!(input_length, 480, "input size is correct");
     assert_eq!(output_length, 480, "output size is correct");
     let samples = wav_reader
-        .into_samples::<f32>()
+        .into_samples::<i32>()
         .map(|chunk| *chunk.as_ref().unwrap())
         .collect::<Vec<_>>();
     let internal_spec = hound::WavSpec {
         sample_rate: crate::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
-        bits_per_sample: crate::DETECTOR_INTERNAL_BIT_DEPTH,
-        sample_format: hound::SampleFormat::Int,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
         channels: 1,
     };
     let mut writer = hound::WavWriter::create(
-        dir.to_owned() + "/tests/resources/test_f32_converted_int16.wav",
+        dir.to_owned() + "/tests/resources/oye_casa_g_1_f32.wav",
         internal_spec,
     )
     .unwrap();
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.reencode_int(chuck))
         .for_each(|reencoded_chunk| {
             for sample in reencoded_chunk {
-                writer.write_sample(sample as i16).ok();
+                writer.write_sample(sample).ok();
             }
         });
     writer.finalize().expect("Unable to save file");

@@ -2,7 +2,6 @@ pub(crate) const DETECTOR_DEFAULT_AVG_THRESHOLD: f32 = 0.2;
 pub(crate) const DETECTOR_DEFAULT_THRESHOLD: f32 = 0.5;
 pub(crate) const DETECTOR_DEFAULT_MIN_SCORES: usize = 5;
 pub(crate) const DETECTOR_INTERNAL_SAMPLE_RATE: usize = 16000;
-pub(crate) const DETECTOR_INTERNAL_BIT_DEPTH: u16 = 16;
 pub(crate) const FEATURE_EXTRACTOR_FRAME_LENGTH_MS: usize = 30;
 pub(crate) const FEATURE_EXTRACTOR_FRAME_SHIFT_MS: usize = 10;
 pub(crate) const FEATURE_EXTRACTOR_NUM_COEFFICIENT: usize = 6;

@@ -8,7 +8,7 @@ use crate::{
         Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, GainNormalizerFilter,
         WAVEncoder,
     },
-    Endianness, SampleFormat, WavFmt, DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
+    Endianness, SampleFormat, WavFmt, DETECTOR_INTERNAL_SAMPLE_RATE,
     FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
     FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
 };
@@ -162,7 +162,6 @@ fn compute_sample_features<R: std::io::Read>(
         &fmt,
         FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         DETECTOR_INTERNAL_SAMPLE_RATE,
-        DETECTOR_INTERNAL_BIT_DEPTH,
     )?;
     let samples_per_frame = encoder.get_output_frame_length();
     let samples_per_shift = (samples_per_frame as f32

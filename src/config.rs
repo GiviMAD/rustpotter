@@ -1,7 +1,7 @@
 use crate::{
     DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
-    DETECTOR_INTERNAL_BIT_DEPTH, DETECTOR_INTERNAL_SAMPLE_RATE,
-    FEATURE_COMPARATOR_DEFAULT_BAND_SIZE, FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
+    FEATURE_COMPARATOR_DEFAULT_REFERENCE,
 };
 
 /// Indicates the byte endianness
@@ -33,8 +33,8 @@ impl Default for WavFmt {
     fn default() -> WavFmt {
         WavFmt {
             sample_rate: DETECTOR_INTERNAL_SAMPLE_RATE,
-            sample_format: hound::SampleFormat::Int,
-            bits_per_sample: DETECTOR_INTERNAL_BIT_DEPTH,
+            sample_format: hound::SampleFormat::Float,
+            bits_per_sample: 32,
             channels: 1,
             endianness: Endianness::Little,
         }
