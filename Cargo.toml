@@ -10,8 +10,7 @@ exclude = [
     ".vscode/*",
     "tests/*",
     "tools/*",
-    "*.png",
-    ".gitignore",
+    "square-icon.png",
 ]
 
 [dependencies]
