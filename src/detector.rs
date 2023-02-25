@@ -68,6 +68,10 @@ pub struct Rustpotter {
     /// Whenever a better partial detection is found, it is set to the double of the max number of feature frames in the wakeword samples.
     /// When it gets to zero and a partial detection exists, it'll be considered the final detection.
     detection_countdown: usize,
+    /// Current frame rms level
+    rms_level: f32,
+    /// Gain normalization applied to current frame, 1 if none
+    gain: f32,
 }
 
 impl Rustpotter {
@@ -123,6 +127,8 @@ impl Rustpotter {
             wakewords: Vec::new(),
             partial_detection: None,
             detection_countdown: 0,
+            rms_level: 0.,
+            gain: 0.,
         })
     }
     /// Add wakeword
@@ -130,7 +136,7 @@ impl Rustpotter {
         self.wakewords.push(wakeword);
         // update detection window requirements and gain normalizer target rms level
         let mut max_feature_frames = usize::MIN;
-        let mut rms_level = f32::NAN;
+        let mut target_rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
             if !wakeword.samples_features.is_empty() {
                 max_feature_frames = wakeword
@@ -140,15 +146,12 @@ impl Rustpotter {
                     .max()
                     .unwrap_or(0)
                     .max(max_feature_frames);
-                rms_level = wakeword.rms_level.max(rms_level);
+                target_rms_level = wakeword.rms_level.max(target_rms_level);
             }
         }
         self.max_features_frames = max_feature_frames;
-        if self.gain_normalizer_filter.is_some() {
-            self.gain_normalizer_filter
-                .as_mut()
-                .unwrap()
-                .target_rms_level = rms_level;
+        if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
+            gain_normalizer_filter.target_rms_level = target_rms_level;
         }
         self.buffering = self.audio_features_window.len() < self.max_features_frames;
     }
@@ -171,6 +174,14 @@ impl Rustpotter {
     /// Returns a reference to the current partial detection if any.
     pub fn get_partial_detection(&self) -> Option<&RustpotterDetection> {
         self.partial_detection.as_ref()
+    }
+    /// Returns the rms level of the last frame (before gain normalization)
+    pub fn get_rms_level(&self) -> f32 {
+        self.rms_level
+    }
+    /// Returns the gain normalization applied to the latest frame
+    pub fn get_gain_normalization(&self) -> f32 {
+        self.gain
     }
     /// Process bytes buffer.
     ///
@@ -233,11 +244,13 @@ impl Rustpotter {
         self.process_internal(&mut encoded_samples)
     }
     fn process_internal(&mut self, audio_buffer: &mut [f32]) -> Option<RustpotterDetection> {
+        self.rms_level = GainNormalizerFilter::get_rms_level(&audio_buffer);
         if self.gain_normalizer_filter.is_some() {
-            self.gain_normalizer_filter
+            self.gain = self
+                .gain_normalizer_filter
                 .as_mut()
                 .unwrap()
-                .filter(audio_buffer);
+                .filter(audio_buffer, self.rms_level);
         }
         if self.band_pass_filter.is_some() {
             self.band_pass_filter.as_mut().unwrap().filter(audio_buffer);
@@ -308,11 +321,11 @@ impl Rustpotter {
                 let score = match self.score_mode {
                     ScoreMode::Max => sorted_scores[0],
                     ScoreMode::Median => {
-                        let mid = sorted_scores.len() / 2;
-                        if sorted_scores.len() % 2 != 0 {
-                            (sorted_scores[mid] + sorted_scores[mid + 1]) / 2.
+                        let trunc_mid = sorted_scores.len() / 2;
+                        if sorted_scores.len() % 2 == 0 {
+                            (sorted_scores[trunc_mid] + sorted_scores[trunc_mid - 1]) / 2.
                         } else {
-                            sorted_scores[mid]
+                            sorted_scores[trunc_mid]
                         }
                     }
                     ScoreMode::Average => {

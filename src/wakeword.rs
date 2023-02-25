@@ -175,7 +175,6 @@ fn compute_sample_features<R: std::io::Read>(
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     );
     // used to calculate measure wakeword samples loudness
-    let gain_normalizer_filter = GainNormalizerFilter::new();
     let encoded_samples = if wav_reader.spec().sample_format == SampleFormat::Int {
         let samples = wav_reader
             .into_samples::<i32>()
@@ -201,7 +200,7 @@ fn compute_sample_features<R: std::io::Read>(
                 acc
             })
     };
-    *out_rms_level = gain_normalizer_filter.get_rms_level(&encoded_samples);
+    *out_rms_level = GainNormalizerFilter::get_rms_level(&encoded_samples);
     let sample_features = encoded_samples
         .as_slice()
         .chunks_exact(encoder.get_output_frame_length())
