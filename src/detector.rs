@@ -70,7 +70,7 @@ pub struct Rustpotter {
     detection_countdown: usize,
     /// Current frame rms level
     rms_level: f32,
-    /// Gain normalization applied to current frame, 1 if none
+    /// Gain normalization applied to current frame.
     gain: f32,
 }
 
@@ -97,17 +97,19 @@ impl Rustpotter {
             config.detector.comparator_band_size,
             config.detector.comparator_reference,
         );
-        let band_pass_filter = if config.filters.band_pass {
+        let band_pass_filter = if config.filters.band_pass.enabled {
             Some(BandPassFilter::new(
                 config.fmt.sample_rate as f32,
-                config.filters.low_cutoff,
-                config.filters.high_cutoff,
+                config.filters.band_pass.low_cutoff,
+                config.filters.band_pass.high_cutoff,
             ))
         } else {
             None
         };
-        let gain_normalizer_filter = if config.filters.gain_normalizer {
-            Some(GainNormalizerFilter::new())
+        let gain_normalizer_filter = if config.filters.gain_normalizer.enabled {
+            Some(GainNormalizerFilter::new(
+                config.filters.gain_normalizer.rms_level_ref,
+            ))
         } else {
             None
         };
@@ -134,7 +136,7 @@ impl Rustpotter {
     /// Add wakeword
     pub fn add_wakeword(&mut self, wakeword: Wakeword) {
         self.wakewords.push(wakeword);
-        // update detection window requirements and gain normalizer target rms level
+        // update detection window and gain normalizer requirements
         let mut max_feature_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
@@ -151,7 +153,7 @@ impl Rustpotter {
         }
         self.max_features_frames = max_feature_frames;
         if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
-            gain_normalizer_filter.target_rms_level = target_rms_level;
+            gain_normalizer_filter.set_rms_level_ref(target_rms_level, self.max_features_frames);
         }
         self.buffering = self.audio_features_window.len() < self.max_features_frames;
     }
@@ -179,9 +181,16 @@ impl Rustpotter {
     pub fn get_rms_level(&self) -> f32 {
         self.rms_level
     }
-    /// Returns the gain normalization applied to the latest frame
-    pub fn get_gain_normalization(&self) -> f32 {
+    /// Returns the gain applied to the latest frame by the gain normalizer filter (1. if none or disabled).
+    pub fn get_gain(&self) -> f32 {
         self.gain
+    }
+    /// Returns the gain normalizer filter rms level reference.
+    pub fn get_rms_level_ref(&self) -> f32 {
+        self.gain_normalizer_filter
+            .as_ref()
+            .map(|f| f.get_rms_level_ref())
+            .unwrap_or(f32::NAN)
     }
     /// Process bytes buffer.
     ///
@@ -340,6 +349,7 @@ impl Rustpotter {
                         scores,
                         counter: self.partial_detection.as_ref().map_or(1, |d| d.counter + 1),
                         gain: self.gain,
+                        rms: self.rms_level,
                     })
                 } else {
                     None
@@ -351,7 +361,7 @@ impl Rustpotter {
         let wakeword_detection = wakeword_detections.into_iter().next();
         if self.partial_detection.is_some() && self.detection_countdown == 0 {
             let wakeword_detection = self.partial_detection.take().unwrap();
-            if wakeword_detection.counter > self.min_scores {
+            if wakeword_detection.counter >= self.min_scores {
                 self.buffering = true;
                 self.audio_features_window.clear();
                 self.feature_extractor.reset();
@@ -367,8 +377,10 @@ impl Rustpotter {
                 {
                     self.partial_detection = wakeword_detection;
                 } else {
-                    self.partial_detection.as_mut().unwrap().counter =
-                        wakeword_detection.as_ref().unwrap().counter;
+                    let partial_detection = self.partial_detection.as_mut().unwrap();
+                    partial_detection.counter = wakeword_detection.as_ref().unwrap().counter;
+                    partial_detection.rms = self.rms_level;
+                    partial_detection.gain = self.gain;
                 }
                 self.detection_countdown = self.max_features_frames / 2;
             }
@@ -411,4 +423,6 @@ pub struct RustpotterDetection {
     pub counter: usize,
     /// Gain applied to the scored frame
     pub gain: f32,
+    /// RMS level of the scored frame
+    pub rms: f32,
 }

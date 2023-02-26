@@ -40,27 +40,56 @@ impl Default for WavFmt {
         }
     }
 }
-/// Configures the audio filters used by the detector.
+/// Configures the gain-normalizer audio filter used by the detector.
 #[cfg_attr(feature = "debug", derive(Debug))]
-pub struct FiltersConfig {
-    /// Enables a gain-normalizer audio filter that normalize the loudness of each input sample buffer
-    /// with respect to the loudness wakeword sample (the RMS level is used as loudness measure).
-    pub gain_normalizer: bool,
-    /// Enables band-pass audio filter that attenuates frequencies outside that range
-    /// defined by the low_cutoff and high_cutoff values.
-    pub band_pass: bool,
+pub struct GainNormalizationConfig {
+    /// Enables the filter.
+    pub enabled: bool,
+    /// Set the rms level reference used to calculate the gain applied.
+    /// If unset the max wakeword rms level is used.
+    pub rms_level_ref: Option<f32>,
+}
+impl Default for GainNormalizationConfig {
+    fn default() -> GainNormalizationConfig {
+        GainNormalizationConfig {
+            enabled: false,
+            rms_level_ref: None,
+        }
+    }
+}
+/// Configures the band-pass audio filter used by the detector.
+#[cfg_attr(feature = "debug", derive(Debug))]
+pub struct BandPassConfig {
+    /// Enables the filter.
+    pub enabled: bool,
     /// Low cutoff for the band-pass filter.
     pub low_cutoff: f32,
     /// High cutoff for the band-pass filter.
     pub high_cutoff: f32,
 }
+impl Default for BandPassConfig {
+    fn default() -> BandPassConfig {
+        BandPassConfig {
+            enabled: false,
+            low_cutoff: 80.,
+            high_cutoff: 400.,
+        }
+    }
+}
+/// Configures the audio filters used by the detector.
+#[cfg_attr(feature = "debug", derive(Debug))]
+pub struct FiltersConfig {
+    /// Enables a gain-normalizer audio filter that intent to approximate the volume of the stream
+    /// to a reference level (RMS of the samples is used as volume measure).
+    pub gain_normalizer: GainNormalizationConfig,
+    /// Enables a band-pass audio filter that attenuates frequencies outside the low cutoff and high cutoff range.
+    pub band_pass: BandPassConfig,
+}
 impl Default for FiltersConfig {
     fn default() -> FiltersConfig {
         FiltersConfig {
-            gain_normalizer: false,
-            band_pass: false,
-            low_cutoff: 80.,
-            high_cutoff: 400.,
+            gain_normalizer: GainNormalizationConfig::default(),
+            band_pass: BandPassConfig::default(),
         }
     }
 }
