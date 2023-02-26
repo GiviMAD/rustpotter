@@ -99,7 +99,7 @@ impl Rustpotter {
         );
         let band_pass_filter = if config.filters.band_pass.enabled {
             Some(BandPassFilter::new(
-                config.fmt.sample_rate as f32,
+                DETECTOR_INTERNAL_SAMPLE_RATE as f32,
                 config.filters.band_pass.low_cutoff,
                 config.filters.band_pass.high_cutoff,
             ))
