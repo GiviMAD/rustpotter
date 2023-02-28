@@ -76,7 +76,7 @@ pub struct Rustpotter {
 
 impl Rustpotter {
     /// Returns a configured Rustpotter instance.
-    pub fn new(config: &RustpotterConfig) -> Result<Rustpotter, &'static str> {
+    pub fn new(config: &RustpotterConfig) -> Result<Rustpotter, String> {
         let reencoder = WAVEncoder::new(
             &config.fmt,
             FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
@@ -133,9 +133,23 @@ impl Rustpotter {
             gain: 1.,
         })
     }
-    /// Add wakeword
+    /// Add wakeword to the detector.
     pub fn add_wakeword(&mut self, wakeword: Wakeword) {
         self.wakewords.push(wakeword);
+        self.on_wakeword_change();
+    }
+    /// Remove wakeword by name.
+    pub fn remove_wakeword(&mut self, name: &str) -> bool {
+        let len = self.wakewords.len();
+        self.wakewords.retain(|w| !w.name.eq(name));
+        if len != self.wakewords.len() {
+            self.on_wakeword_change();
+            true
+        } else {
+            false
+        }
+    }
+    fn on_wakeword_change(&mut self) {
         // update detection window and gain normalizer requirements
         let mut max_feature_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
@@ -153,17 +167,18 @@ impl Rustpotter {
         }
         self.max_features_frames = max_feature_frames;
         if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
-            gain_normalizer_filter.set_rms_level_ref(target_rms_level, self.max_features_frames);
+            gain_normalizer_filter
+                .set_rms_level_ref(target_rms_level, self.max_features_frames / 3);
         }
         self.buffering = self.audio_features_window.len() < self.max_features_frames;
     }
-    /// Add wakeword from model bytes
+    /// Add wakeword from model bytes.
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
-        Ok(self.add_wakeword(Wakeword::load_from_buffer(buffer)?))
+        Wakeword::load_from_buffer(buffer).map(|wakeword| self.add_wakeword(wakeword))
     }
-    /// Add wakeword from model path
+    /// Add wakeword from model path.
     pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
-        Ok(self.add_wakeword(Wakeword::load_from_file(path)?))
+        Wakeword::load_from_file(path).map(|wakeword| self.add_wakeword(wakeword))
     }
     /// Returns the number of audio samples needed by the detector.
     pub fn get_samples_per_frame(&self) -> usize {
