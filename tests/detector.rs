@@ -104,25 +104,25 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
     let detected_wakewords =
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 0.2, 5.);
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].score, 0.73042387);
-    assert_eq!(detected_wakewords[1].score, 0.7101413);
+    assert_eq!(detected_wakewords[0].score, 0.7304294);
+    assert_eq!(detected_wakewords[1].score, 0.71067363);
 }
 
 #[test]
-fn it_can_detect_wakewords_while_applying_band_pass_and_gain_normalizer_audio_filters() {
+fn it_can_detect_wakewords_while_applying_gain_normalizer_and_band_pass_audio_filters() {
     let mut config = RustpotterConfig::default();
     config.detector.avg_threshold = 0.;
     config.detector.threshold = 0.5;
     config.filters.gain_normalizer.enabled = true;
     config.filters.band_pass.enabled = true;
     config.filters.band_pass.low_cutoff = 80.0;
-    config.filters.band_pass.high_cutoff = 400.0;
+    config.filters.band_pass.high_cutoff = 500.0;
     config.detector.score_mode = ScoreMode::Median;
     let detected_wakewords =
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 0.2, 5.);
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].score, 0.57598263);
-    assert_eq!(detected_wakewords[1].score, 0.5923131);
+    assert_eq!(detected_wakewords[0].score, 0.5775406);
+    assert_eq!(detected_wakewords[1].score, 0.58341914);
 }
 
 fn run_detection_simulation(

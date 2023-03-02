@@ -12,21 +12,20 @@ use crate::{
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```
 /// use rustpotter::{Rustpotter, RustpotterConfig, Wakeword};
-/// // assuming the audio input format match the detector defaults
-/// let mut detector_config = RustpotterConfig::default();
-/// // Configure the detector
+/// // assuming the audio input format match the rustpotter defaults
+/// let mut rustpotter_config = RustpotterConfig::default();
+/// // Configure the rustpotter
 /// // ...
-/// let mut detector = Rustpotter::new(&detector_config).unwrap();
+/// let mut rustpotter = Rustpotter::new(&rustpotter_config).unwrap();
 /// // load and enable a wakeword
-/// detector.add_wakeword_from_file("./tests/resources/oye_casa_g.rpw").unwrap();
-/// // You need a buffer of size detector.get_samples_per_frame() when using samples or detector.get_bytes_per_frame() when using bytes.  
-/// let mut frame_buffer: Vec<i16> = vec![0; detector.get_samples_per_frame()];
+/// rustpotter.add_wakeword_from_file("./tests/resources/oye_casa_g.rpw").unwrap();
+/// // You need a buffer of size rustpotter.get_samples_per_frame() when using samples or rustpotter.get_bytes_per_frame() when using bytes.  
+/// let mut frame_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
 /// // while true { Iterate forever
 ///     // fill the buffer with the required samples/bytes...
-///     let detection_option = detector.process_short_buffer(&frame_buffer);
-///     if detection_option.is_some() {
-///         let detection = detection_option.unwrap();
-///         // println!("{:?}", detection);
+///    let detection = rustpotter.process_i16(sample_buffer);
+///     if let Some(detection) = detection {
+///         println!("{:?}", detection);
 ///     }
 /// // }
 /// ```
@@ -95,7 +94,7 @@ impl Rustpotter {
         );
         let feature_comparator = FeatureComparator::new(
             config.detector.comparator_band_size,
-            config.detector.comparator_reference,
+            config.detector.comparator_ref,
         );
         let band_pass_filter = if config.filters.band_pass.enabled {
             Some(BandPassFilter::new(
@@ -108,6 +107,8 @@ impl Rustpotter {
         };
         let gain_normalizer_filter = if config.filters.gain_normalizer.enabled {
             Some(GainNormalizerFilter::new(
+                config.filters.gain_normalizer.min_gain,
+                config.filters.gain_normalizer.max_gain,
                 config.filters.gain_normalizer.rms_level_ref,
             ))
         } else {
@@ -209,78 +210,71 @@ impl Rustpotter {
     }
     /// Process bytes buffer.
     ///
-    /// Requires that the buffer length matches the return
-    /// of the get_bytes_per_frame method.
+    /// Number of bytes provided should match the return of the get_bytes_per_frame method.
     ///
     /// Assumes sample rate match the configured for the detector.
     ///
     /// Assumes buffer endianness matches the configured for the detector.
     ///
     pub fn process_byte_buffer(&mut self, audio_bytes: &[u8]) -> Option<RustpotterDetection> {
-        let mut encoded_samples = self.wav_encoder.encode(audio_bytes);
-        self.process_internal(&mut encoded_samples)
+        let encoded_samples = self.wav_encoder.encode(audio_bytes);
+        self.process_audio(encoded_samples)
     }
-    /// Process i32 audio chunks.
+    /// Process i16 audio chunks.
     ///
-    /// Requires that the audio chunk length matches the return
-    /// of the get_samples_per_frame method.
+    /// Number of samples provided should match the return of the get_samples_per_frame method.
     ///
-    /// Assumes sample rate match the configured for the detector.
+    /// Only use if you have configured bits_per_sample to one of: 8, 16.
     ///
-    /// Assumes that detector bits_per_sample is one of: 8, 16.
-    ///
-    /// Assumes that detector sample_format is 'int'.
-    pub fn process_short_buffer(&mut self, audio_samples: &[i16]) -> Option<RustpotterDetection> {
-        let mut encoded_samples = self.wav_encoder.reencode_int(
-            &audio_samples
+    /// Only use if you have configured sample_format to 'int'.
+    pub fn process_i16(&mut self, audio_samples: &[i16]) -> Option<RustpotterDetection> {
+        self.process_i32(
+            audio_samples
                 .into_iter()
                 .map(|sample| *sample as i32)
-                .collect::<Vec<i32>>(),
-        );
-        self.process_internal(&mut encoded_samples)
+                .collect::<Vec<i32>>()
+                .as_slice(),
+        )
     }
     /// Process i32 audio chunks.
     ///
-    /// Requires that the audio chunk length matches the return
-    /// of the get_samples_per_frame method.
+    /// Number of samples provided should match the return of the get_samples_per_frame method.
     ///
-    /// Assumes sample rate match the configured for the detector.
+    /// Only use if you have configured bits_per_sample to one of: 8, 16, 24, 32.
     ///
-    /// Assumes that detector bits_per_sample is one of: 8, 16, 24, 32.
-    ///
-    /// Assumes that detector sample_format is 'int'.
-    pub fn process_int_buffer(&mut self, audio_samples: &[i32]) -> Option<RustpotterDetection> {
-        let mut encoded_samples = self.wav_encoder.reencode_int(audio_samples);
-        self.process_internal(&mut encoded_samples)
+    /// Only use if you have configured sample_format to 'int'.
+    pub fn process_i32(&mut self, audio_samples: &[i32]) -> Option<RustpotterDetection> {
+        let reencoded_samples = self.wav_encoder.reencode_int(audio_samples);
+        self.process_audio(reencoded_samples)
     }
     /// Process f32 audio chunks.
     ///
-    /// Requires that the audio chunk length matches the return
-    /// of the get_samples_per_frame method.
+    /// Number of samples provided should match the return of the get_samples_per_frame method.
     ///
-    /// Assumes sample rate match the configured for the detector.
+    /// Only use if you have configured bits_per_sample to 32.
     ///
-    /// Requires that detector bits_per_sample is 32 to work.
-    ///
-    /// Requires that detector sample_format is 'float' to work.
-    pub fn process_float_buffer(&mut self, audio_samples: &[f32]) -> Option<RustpotterDetection> {
-        let mut encoded_samples = self.wav_encoder.reencode_float(audio_samples);
-        self.process_internal(&mut encoded_samples)
+    /// Only use if you have configured sample_format to 'float'.
+    pub fn process_f32(&mut self, audio_samples: &[f32]) -> Option<RustpotterDetection> {
+        let reencoded_samples = self.wav_encoder.reencode_float(audio_samples);
+        self.process_audio(reencoded_samples)
     }
-    fn process_internal(&mut self, audio_buffer: &mut [f32]) -> Option<RustpotterDetection> {
+    fn process_audio(&mut self, mut audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
         self.rms_level = GainNormalizerFilter::get_rms_level(&audio_buffer);
         if self.gain_normalizer_filter.is_some() {
             self.gain = self
                 .gain_normalizer_filter
                 .as_mut()
                 .unwrap()
-                .filter(audio_buffer, self.rms_level);
+                .filter(&mut audio_buffer, self.rms_level);
         }
         if self.band_pass_filter.is_some() {
-            self.band_pass_filter.as_mut().unwrap().filter(audio_buffer);
+            self.band_pass_filter
+                .as_mut()
+                .unwrap()
+                .filter(&mut audio_buffer);
         }
         self.feature_extractor
-            .compute_features(audio_buffer)
+            .compute_features(&audio_buffer)
             .into_iter()
             .find_map(|features| self.process_new_features(features))
     }
@@ -364,7 +358,6 @@ impl Rustpotter {
                         scores,
                         counter: self.partial_detection.as_ref().map_or(1, |d| d.counter + 1),
                         gain: self.gain,
-                        rms: self.rms_level,
                     })
                 } else {
                     None
@@ -394,7 +387,6 @@ impl Rustpotter {
                 } else {
                     let partial_detection = self.partial_detection.as_mut().unwrap();
                     partial_detection.counter = wakeword_detection.as_ref().unwrap().counter;
-                    partial_detection.rms = self.rms_level;
                     partial_detection.gain = self.gain;
                 }
                 self.detection_countdown = self.max_features_frames / 2;
@@ -438,6 +430,4 @@ pub struct RustpotterDetection {
     pub counter: usize,
     /// Gain applied to the scored frame
     pub gain: f32,
-    /// RMS level of the scored frame
-    pub rms: f32,
 }

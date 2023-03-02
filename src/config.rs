@@ -48,12 +48,18 @@ pub struct GainNormalizationConfig {
     /// Set the rms level reference used to calculate the gain applied.
     /// If unset the max wakeword rms level is used.
     pub rms_level_ref: Option<f32>,
+    /// Min gain applied. (precision of 0.1)
+    pub min_gain: f32,
+    /// Max gain applied. (precision of 0.1)
+    pub max_gain: f32,
 }
 impl Default for GainNormalizationConfig {
     fn default() -> GainNormalizationConfig {
         GainNormalizationConfig {
             enabled: false,
             rms_level_ref: None,
+            min_gain: 0.1,
+            max_gain: 1.0,
         }
     }
 }
@@ -110,12 +116,12 @@ pub struct DetectorConfig {
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
-    /// How to calculate the score.
+    /// How to calculate a unified score.
     pub score_mode: ScoreMode,
     /// Feature comparator band size.
     pub comparator_band_size: u16,
-    /// Feature comparator reference.
-    pub comparator_reference: f32,
+    /// Feature comparator reference. (Used to express the similarity as a percent)
+    pub comparator_ref: f32,
 }
 impl Default for DetectorConfig {
     fn default() -> DetectorConfig {
@@ -125,7 +131,7 @@ impl Default for DetectorConfig {
             min_scores: DETECTOR_DEFAULT_MIN_SCORES,
             score_mode: ScoreMode::Max,
             comparator_band_size: FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-            comparator_reference: FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+            comparator_ref: FEATURE_COMPARATOR_DEFAULT_REFERENCE,
         }
     }
 }

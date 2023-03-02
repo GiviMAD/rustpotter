@@ -6,15 +6,6 @@ pub struct FeatureComparator {
     reference: f32,
 }
 impl FeatureComparator {
-    pub fn compare(&self, a: &[&[f32]], b: &[&[f32]]) -> f32 {
-        let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
-        let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size);
-        let normalized_cost = cost / (a.len() + b.len()) as f32;
-        self.compute_probability(normalized_cost)
-    }
-    fn compute_probability(&self, cost: f32) -> f32 {
-        1. / (1. + ((cost - self.reference) / self.reference).exp())
-    }
     pub fn new(band_size: u16, reference: f32) -> Self {
         FeatureComparator {
             band_size,
@@ -23,6 +14,15 @@ impl FeatureComparator {
     }
     pub fn calculate_distance(ax: &[f32], bx: &[f32]) -> f32 {
         1. - cosine_similarity(ax, bx)
+    }
+    pub fn compare(&self, a: &[&[f32]], b: &[&[f32]]) -> f32 {
+        let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
+        let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size);
+        let normalized_cost = cost / (a.len() + b.len()) as f32;
+        self.compute_probability(normalized_cost)
+    }
+    fn compute_probability(&self, cost: f32) -> f32 {
+        1. / (1. + ((cost - self.reference) / self.reference).exp())
     }
 }
 
