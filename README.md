@@ -38,7 +38,7 @@ Using the `struct Wakeword`, the features can be extracted from wav files, persi
 
 Note that this `doesn't work with raw wav files`, it parses the file format from its header.
 
-The detector supports adding multiple wakeword instances. 
+The detector supports adding multiple wakewords. 
 
 ## The Detection
 
