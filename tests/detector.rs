@@ -131,7 +131,6 @@ fn run_detection_simulation(
 ) -> Vec<rustpotter::RustpotterDetection> {
     run_detection_simulation_with_gains(config, model_path, 1.0, 1.0)
 }
-
 fn run_detection_simulation_with_gains(
     mut config: RustpotterConfig,
     model_path: &str,
@@ -160,7 +159,7 @@ fn run_detection_simulation_with_gains(
     );
     let detected_wakewords = live_audio_simulation
         .chunks_exact(rustpotter.get_bytes_per_frame())
-        .filter_map(|audio_buffer| rustpotter.process_byte_buffer(audio_buffer))
+        .filter_map(|audio_buffer| rustpotter.process_bytes(audio_buffer))
         .map(|detection| {
             print_detection(&detection);
             detection

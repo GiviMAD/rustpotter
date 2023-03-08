@@ -40,14 +40,14 @@ impl Default for WavFmt {
         }
     }
 }
-/// Configures the gain-normalizer audio filter used by the detector.
+/// Configures the gain-normalizer audio filter used.
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct GainNormalizationConfig {
     /// Enables the filter.
     pub enabled: bool,
     /// Set the rms level reference used to calculate the gain applied.
-    /// If unset the max wakeword rms level is used.
-    pub rms_level_ref: Option<f32>,
+    /// If unset the estimated wakeword rms level is used.
+    pub gain_ref: Option<f32>,
     /// Min gain applied. (precision of 0.1)
     pub min_gain: f32,
     /// Max gain applied. (precision of 0.1)
@@ -57,13 +57,13 @@ impl Default for GainNormalizationConfig {
     fn default() -> GainNormalizationConfig {
         GainNormalizationConfig {
             enabled: false,
-            rms_level_ref: None,
+            gain_ref: None,
             min_gain: 0.1,
             max_gain: 1.0,
         }
     }
 }
-/// Configures the band-pass audio filter used by the detector.
+/// Configures the band-pass audio filter used.
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct BandPassConfig {
     /// Enables the filter.
@@ -82,7 +82,7 @@ impl Default for BandPassConfig {
         }
     }
 }
-/// Configures the audio filters used by the detector.
+/// Configures the audio filters.
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct FiltersConfig {
     /// Enables a gain-normalizer audio filter that intent to approximate the volume of the stream

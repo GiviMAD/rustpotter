@@ -109,7 +109,7 @@ impl Rustpotter {
             Some(GainNormalizerFilter::new(
                 config.filters.gain_normalizer.min_gain,
                 config.filters.gain_normalizer.max_gain,
-                config.filters.gain_normalizer.rms_level_ref,
+                config.filters.gain_normalizer.gain_ref,
             ))
         } else {
             None
@@ -150,8 +150,8 @@ impl Rustpotter {
             false
         }
     }
+    /// Update detection window and gain normalizer requirements.
     fn on_wakeword_change(&mut self) {
-        // update detection window and gain normalizer requirements
         let mut max_feature_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
@@ -216,7 +216,7 @@ impl Rustpotter {
     ///
     /// Assumes buffer endianness matches the configured for the detector.
     ///
-    pub fn process_byte_buffer(&mut self, audio_bytes: &[u8]) -> Option<RustpotterDetection> {
+    pub fn process_bytes(&mut self, audio_bytes: &[u8]) -> Option<RustpotterDetection> {
         let encoded_samples = self.wav_encoder.encode(audio_bytes);
         self.process_audio(encoded_samples)
     }
