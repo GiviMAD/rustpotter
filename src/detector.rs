@@ -83,8 +83,8 @@ impl Rustpotter {
         )?;
         let samples_per_frame = reencoder.get_output_frame_length();
         let samples_per_shift = (samples_per_frame as f32
-            / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)
-                as f32) as usize;
+            / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32))
+            as usize;
         let feature_extractor = FeatureExtractor::new(
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
@@ -158,8 +158,8 @@ impl Rustpotter {
             if !wakeword.samples_features.is_empty() {
                 max_feature_frames = wakeword
                     .samples_features
-                    .iter()
-                    .map(|(_, feature_frames)| feature_frames.len())
+                    .values()
+                    .map(Vec::len)
                     .max()
                     .unwrap_or(0)
                     .max(max_feature_frames);
@@ -230,7 +230,7 @@ impl Rustpotter {
     pub fn process_i16(&mut self, audio_samples: &[i16]) -> Option<RustpotterDetection> {
         self.process_i32(
             audio_samples
-                .into_iter()
+                .iter()
                 .map(|sample| *sample as i32)
                 .collect::<Vec<i32>>()
                 .as_slice(),
@@ -333,8 +333,7 @@ impl Rustpotter {
                         acc
                     },
                 );
-                let mut sorted_scores =
-                    scores.iter().map(|(_, score)| *score).collect::<Vec<f32>>();
+                let mut sorted_scores = scores.values().copied().collect::<Vec<f32>>();
                 sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
                 let score = match self.score_mode {
                     ScoreMode::Max => sorted_scores[0],
@@ -404,7 +403,7 @@ impl Rustpotter {
         }
         FeatureNormalizer::normalize(features)
     }
-    fn score_frame(&self, frame_features: &Vec<Vec<f32>>, template: &Vec<Vec<f32>>) -> f32 {
+    fn score_frame(&self, frame_features: &[Vec<f32>], template: &[Vec<f32>]) -> f32 {
         let score = self.feature_comparator.compare(
             &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
             &frame_features

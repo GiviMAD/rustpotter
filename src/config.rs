@@ -84,6 +84,7 @@ impl Default for BandPassConfig {
 }
 /// Configures the audio filters.
 #[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Default)]
 pub struct FiltersConfig {
     /// Enables a gain-normalizer audio filter that intent to approximate the volume of the stream
     /// to a reference level (RMS of the samples is used as volume measure).
@@ -91,14 +92,7 @@ pub struct FiltersConfig {
     /// Enables a band-pass audio filter that attenuates frequencies outside the low cutoff and high cutoff range.
     pub band_pass: BandPassConfig,
 }
-impl Default for FiltersConfig {
-    fn default() -> FiltersConfig {
-        FiltersConfig {
-            gain_normalizer: GainNormalizationConfig::default(),
-            band_pass: BandPassConfig::default(),
-        }
-    }
-}
+
 /// Indicates how to calculate the final score.
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy)]
@@ -137,6 +131,7 @@ impl Default for DetectorConfig {
 }
 /// Encapsulates all the tool configurations.
 #[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Default)]
 pub struct RustpotterConfig {
     /// configures expected wav input format.
     pub fmt: WavFmt,
@@ -145,12 +140,4 @@ pub struct RustpotterConfig {
     /// Configures input audio filters.
     pub filters: FiltersConfig,
 }
-impl Default for RustpotterConfig {
-    fn default() -> RustpotterConfig {
-        RustpotterConfig {
-            fmt: WavFmt::default(),
-            detector: DetectorConfig::default(),
-            filters: FiltersConfig::default(),
-        }
-    }
-}
+

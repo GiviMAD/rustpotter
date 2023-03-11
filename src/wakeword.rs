@@ -30,9 +30,7 @@ impl Wakeword {
         let mut file = match File::create(path) {
             Ok(it) => it,
             Err(err) => {
-                return Err(String::from(
-                    "Unable to open file ".to_owned() + path + ": " + &err.to_string(),
-                ))
+                return Err("Unable to open file ".to_owned() + path + ": " + &err.to_string())
             }
         };
         ser::into_writer(self, &mut file).map_err(|err| err.to_string())?;
@@ -47,9 +45,7 @@ impl Wakeword {
         let file = match File::open(path) {
             Ok(it) => it,
             Err(err) => {
-                return Err(String::from(
-                    "Unable to open file ".to_owned() + path + ": " + &err.to_string(),
-                ))
+                return Err("Unable to open file ".to_owned() + path + ": " + &err.to_string())
             }
         };
         let reader = BufReader::new(file);
@@ -69,7 +65,7 @@ impl Wakeword {
         rms_level: f32,
         samples_features: HashMap<String, Vec<Vec<f32>>>,
     ) -> Result<Wakeword, String> {
-        if samples_features.len() == 0 {
+        if samples_features.is_empty() {
             return Err("Can not create an empty wakeword".to_string());
         }
         Ok(Wakeword {
@@ -120,14 +116,12 @@ impl Wakeword {
         for sample_path in samples {
             let path = Path::new(&sample_path);
             if !path.exists() || !path.is_file() {
-                return Err(String::from("File not found: ".to_owned() + &sample_path));
+                return Err("File not found: ".to_owned() + &sample_path);
             }
             let file = match File::open(&sample_path) {
                 Ok(it) => it,
                 Err(err) => {
-                    return Err(String::from(
-                        "Unable to open file ".to_owned() + &sample_path + ": " + &err.to_string(),
-                    ))
+                    return Err("Unable to open file ".to_owned() + &sample_path + ": " + &err.to_string())
                 }
             };
             let mut sample_rms_level = 0.;
@@ -168,8 +162,7 @@ fn compute_sample_features<R: std::io::Read>(
     )?;
     let samples_per_frame = encoder.get_output_frame_length();
     let samples_per_shift = (samples_per_frame as f32
-        / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)
-            as f32) as usize;
+        / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)) as usize;
     let mut feature_extractor = FeatureExtractor::new(
         DETECTOR_INTERNAL_SAMPLE_RATE,
         samples_per_frame,
@@ -211,13 +204,13 @@ fn compute_sample_features<R: std::io::Read>(
                 acc
             })
     };
-    if rms_levels.len() > 0 {
+    if !rms_levels.is_empty() {
         *out_rms_level = calc_median(rms_levels);
     }
     let sample_features = encoded_samples
         .as_slice()
         .chunks_exact(encoder.get_output_frame_length())
-        .map(|samples_chunk| feature_extractor.compute_features(&samples_chunk))
+        .map(|samples_chunk| feature_extractor.compute_features(samples_chunk))
         .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, feature_matrix| {
             for features in feature_matrix {
                 acc.push(features);
@@ -232,7 +225,7 @@ fn compute_avg_samples_features(
     if templates.len() <= 1 {
         return None;
     }
-    let mut template_values: Vec<_> = templates.into_iter().collect();
+    let mut template_values: Vec<_> = templates.iter().collect();
     template_values.sort_by(|a, b| {
         let equality = b.1.len().cmp(&a.1.len());
         if equality == Ordering::Equal {
@@ -280,7 +273,7 @@ fn compute_avg_samples_features(
 fn calc_median(mut values: Vec<f32>) -> f32 {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     let truncated_mid = values.len() / 2;
-    if values.len() == 0 {
+    if values.is_empty() {
         0.
     } else if truncated_mid != 0 && values.len() % 2 == 0 {
         values[truncated_mid] + values[truncated_mid - 1]

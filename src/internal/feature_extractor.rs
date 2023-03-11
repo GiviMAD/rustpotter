@@ -45,16 +45,14 @@ impl FeatureExtractor {
     pub fn compute_features(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
         audio_samples
             .chunks_exact(self.samples_per_shift)
-            .map(|audio_part| self.process_audio_part(audio_part))
-            .filter(Option::is_some)
-            .map(Option::unwrap)
+            .filter_map(|audio_part| self.process_audio_part(audio_part))
             .collect()
     }
     pub fn reset(&mut self) {
         self.samples.clear();
     }
     fn process_audio_part(&mut self, audio_buffer: &[f32]) -> Option<Vec<f32>> {
-        let mut new_samples = self.pre_emphasis(&audio_buffer);
+        let mut new_samples = self.pre_emphasis(audio_buffer);
         if self.samples.len() >= self.samples_per_frame {
             self.samples.drain(0..new_samples.len());
             self.samples.append(&mut new_samples);
@@ -117,7 +115,7 @@ impl FeatureExtractor {
         self.discrete_cosine_transform(mfccs)
     }
     fn frequency_to_mel(frequency: usize) -> f32 {
-        return 1127. * (1. + (frequency as f32 / 700.0)).ln();
+        1127. * (1. + (frequency as f32 / 700.0)).ln()
     }
     fn calculate_mel_frequency_spectrum(&self, magnitude_spectrum: &[f32]) -> Vec<f32> {
         (0..self.num_coefficients)
@@ -131,15 +129,21 @@ impl FeatureExtractor {
             .collect()
     }
     fn discrete_cosine_transform(&self, mut input_signal: Vec<f32>) -> Vec<f32> {
-        let num_samples = input_signal.len();
         let dct_signal: Vec<f32> = input_signal.to_vec();
-        let pi_over_n = PI / num_samples as f32;
-        for k in 0..num_samples {
-            input_signal[k] = 2.
-                * (0..num_samples)
-                    .map(|n| dct_signal[n] * (pi_over_n * (n as f32 + 0.5) * k as f32).cos())
-                    .sum::<f32>();
-        }
+        let pi_over_n = PI / input_signal.len() as f32;
+        input_signal
+            .iter_mut()
+            .enumerate()
+            .for_each(|(k, input_sample)| {
+                *input_sample = 2.
+                    * dct_signal
+                        .iter()
+                        .enumerate()
+                        .map(|(n, dct_sample)| {
+                            dct_sample * (pi_over_n * (n as f32 + 0.5) * k as f32).cos()
+                        })
+                        .sum::<f32>();
+            });
         input_signal
     }
     fn new_mel_filter_bank(
@@ -155,7 +159,7 @@ impl FeatureExtractor {
         let centre_indices: Vec<usize> = (0..num_coefficients + 2)
             .map(|i| {
                 let f = i as f32 * (max_mel - min_mel) / (num_coefficients + 1) as f32 + min_mel;
-                let mut tmp = (1. as f32 + 1000.0 / 700.0).ln() / 1000.0;
+                let mut tmp = (1_f32 + 1000.0 / 700.0).ln() / 1000.0;
                 tmp = ((f * tmp).exp() - 1.) / (sample_rate as f32 / 2.);
                 (0.5 + 700. * magnitude_spectrum_size as f32 * tmp).floor() as usize
             })

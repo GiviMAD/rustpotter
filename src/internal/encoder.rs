@@ -44,7 +44,7 @@ impl WAVEncoder {
     pub fn reencode_int(&mut self, buffer: &[i32]) -> Vec<f32> {
         self.reencode_to_mono_with_sample_rate(
             &buffer
-                .into_iter()
+                .iter()
                 .map(|s| {
                     match self.source_bits_per_sample {
                         8 => *s as f32 / i8::MAX as f32,
@@ -77,7 +77,7 @@ impl WAVEncoder {
             self.resampler
                 .as_mut()
                 .unwrap()
-                .process_into_buffer(&waves_in, waves_out, None)
+                .process_into_buffer(waves_in, waves_out, None)
                 .unwrap();
             waves_out.get(0).unwrap().to_vec()
         }
@@ -133,7 +133,7 @@ impl WAVEncoder {
                 source_bits_per_sample: input_spec.bits_per_sample,
                 source_sample_format: input_spec.sample_format,
                 source_channels: input_spec.channels,
-                source_endianness: input_spec.endianness.clone(),
+                source_endianness: input_spec.endianness,
             })
         }
     }

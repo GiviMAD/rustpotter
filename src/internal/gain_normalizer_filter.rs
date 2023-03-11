@@ -9,7 +9,7 @@ pub(crate) struct GainNormalizerFilter {
 }
 impl GainNormalizerFilter {
     pub fn filter(&mut self, signal: &mut [f32], rms_level: f32) -> f32 {
-        if self.rms_level_ref != f32::NAN && rms_level != 0. {
+        if !self.rms_level_ref.is_nan() && rms_level != 0. {
             // update the window
             self.rms_level_window.push(rms_level);
             if self.rms_level_window.len() > self.window_size {
@@ -34,7 +34,7 @@ impl GainNormalizerFilter {
         }
     }
     pub fn get_rms_level_ref(&self) -> f32 {
-        return self.rms_level_ref;
+        self.rms_level_ref
     }
     pub fn set_rms_level_ref(&mut self, rms_level: f32, window_size: usize) {
         if !self.fixed_rms_level {
