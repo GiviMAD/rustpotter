@@ -121,7 +121,10 @@ impl Wakeword {
             let file = match File::open(&sample_path) {
                 Ok(it) => it,
                 Err(err) => {
-                    return Err("Unable to open file ".to_owned() + &sample_path + ": " + &err.to_string())
+                    return Err("Unable to open file ".to_owned()
+                        + &sample_path
+                        + ": "
+                        + &err.to_string())
                 }
             };
             let mut sample_rms_level = 0.;
@@ -162,7 +165,8 @@ fn compute_sample_features<R: std::io::Read>(
     )?;
     let samples_per_frame = encoder.get_output_frame_length();
     let samples_per_shift = (samples_per_frame as f32
-        / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32)) as usize;
+        / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32))
+        as usize;
     let mut feature_extractor = FeatureExtractor::new(
         DETECTOR_INTERNAL_SAMPLE_RATE,
         samples_per_frame,
@@ -239,10 +243,9 @@ fn compute_avg_samples_features(
         .map(|(_, sample)| sample.to_vec())
         .collect::<Vec<Vec<Vec<f32>>>>();
     let mut origin = template_vec.drain(0..1).next().unwrap();
-    for (i, frames) in template_vec.iter().enumerate() {
+    for frames in template_vec.iter() {
         let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
-
-        let _ = dtw.compute_optimal_path(
+        dtw.compute_optimal_path(
             &origin.iter().map(|item| &item[..]).collect::<Vec<_>>(),
             &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
         );
@@ -250,12 +253,14 @@ fn compute_avg_samples_features(
             .iter()
             .map(|x| x.iter().map(|&y| vec![y]).collect::<Vec<_>>())
             .collect::<Vec<_>>();
-        for tuple in dtw.retrieve_optimal_path().unwrap() {
-            for index in 0..frames[tuple[1]].len() {
-                let feature = frames[tuple[1]][i];
-                avgs[tuple[0]][index].push(feature);
-            }
-        }
+        dtw.retrieve_optimal_path()
+            .unwrap()
+            .into_iter()
+            .for_each(|[x, y]| {
+                frames[y].iter().enumerate().for_each(|(index, feature)| {
+                    avgs[x][index].push(*feature);
+                })
+            });
         origin = avgs
             .iter()
             .map(|x| {

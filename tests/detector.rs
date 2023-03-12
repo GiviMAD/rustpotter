@@ -15,9 +15,9 @@ fn it_can_detect_wakewords_with_max_score_mode() {
     config.detector.score_mode = ScoreMode::Max;
     let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].avg_score, 0.38723248);
+    assert_eq!(detected_wakewords[0].avg_score, 0.6495044);
     assert_eq!(detected_wakewords[0].score, 0.7310586);
-    assert_eq!(detected_wakewords[1].avg_score, 0.3544849);
+    assert_eq!(detected_wakewords[1].avg_score, 0.5804737);
     assert_eq!(detected_wakewords[1].score, 0.721843);
 }
 
@@ -31,9 +31,9 @@ fn it_can_detect_wakewords_with_median_score_mode() {
     config.detector.score_mode = ScoreMode::Median;
     let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].avg_score, 0.3677807);
+    assert_eq!(detected_wakewords[0].avg_score, 0.64608675);
     assert_eq!(detected_wakewords[0].score, 0.60123634);
-    assert_eq!(detected_wakewords[1].avg_score, 0.40552408);
+    assert_eq!(detected_wakewords[1].avg_score, 0.5288923);
     assert_eq!(detected_wakewords[1].score, 0.63968724);
 }
 
@@ -47,9 +47,9 @@ fn it_can_detect_wakewords_with_average_score_mode() {
     config.detector.score_mode = ScoreMode::Average;
     let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
     assert_eq!(detected_wakewords.len(), 2);
-    assert_eq!(detected_wakewords[0].avg_score, 0.3677807);
+    assert_eq!(detected_wakewords[0].avg_score, 0.64608675);
     assert_eq!(detected_wakewords[0].score, 0.60458726);
-    assert_eq!(detected_wakewords[1].avg_score, 0.37724355);
+    assert_eq!(detected_wakewords[1].avg_score, 0.5750509);
     assert_eq!(detected_wakewords[1].score, 0.6313083);
 }
 
