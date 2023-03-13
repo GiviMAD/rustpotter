@@ -16,7 +16,9 @@ impl BandPassFilter {
     pub fn filter(&mut self, signal: &mut [f32]) {
         for sample in signal.iter_mut() {
             let x = *sample;
-            *sample = self.a0 * x + self.a1 * self.x1 + self.a2 * self.x2 - self.b1 * self.y1 - self.b2 * self.y2;
+            *sample = self.a0 * x + self.a1 * self.x1 + self.a2 * self.x2
+                - self.b1 * self.y1
+                - self.b2 * self.y2;
             self.x2 = self.x1;
             self.x1 = x;
             self.y2 = self.y1;
@@ -47,4 +49,125 @@ impl BandPassFilter {
             y2: 0.0,
         }
     }
+}
+
+#[test]
+fn filter_audio() {
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let sample_file =
+        std::fs::File::open(dir.to_owned() + "/tests/resources/real_sample.wav").unwrap();
+    let wav_reader = hound::WavReader::new(std::io::BufReader::new(sample_file)).unwrap();
+    let wav_spec = crate::WavFmt {
+        sample_rate: wav_reader.spec().sample_rate as usize,
+        sample_format: wav_reader.spec().sample_format,
+        bits_per_sample: wav_reader.spec().bits_per_sample,
+        channels: wav_reader.spec().channels,
+        endianness: crate::Endianness::Little,
+    };
+    println!("{:?}", wav_spec);
+    let mut encoder = crate::internal::WAVEncoder::new(
+        &wav_spec,
+        crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::DETECTOR_INTERNAL_SAMPLE_RATE,
+    )
+    .unwrap();
+    let input_length = encoder.get_input_frame_length();
+    let output_length = encoder.get_output_frame_length();
+    assert_ne!(
+        input_length, output_length,
+        "input and output not have same length"
+    );
+    assert_eq!(input_length, 1440, "input size is correct");
+    assert_eq!(output_length, 480, "output size is correct");
+    let samples = wav_reader
+        .into_samples::<f32>()
+        .map(|chunk| *chunk.as_ref().unwrap())
+        .collect::<Vec<_>>();
+    let internal_spec = hound::WavSpec {
+        sample_rate: crate::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+        channels: 1,
+    };
+    let mut writer = hound::WavWriter::create(
+        dir.to_owned() + "/tests/resources/band-pass_example.wav",
+        internal_spec,
+    )
+    .unwrap();
+    let mut filter = BandPassFilter::new(crate::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    samples
+        .chunks_exact(encoder.get_input_frame_length())
+        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|mut chunk| {
+            filter.filter(&mut chunk);
+            chunk
+        })
+        .for_each(|encoded_chunk| {
+            for sample in encoded_chunk {
+                writer.write_sample(sample).ok();
+            }
+        });
+    writer.finalize().expect("Unable to save file");
+}
+
+#[test]
+fn filter_gain_normalized_audio() {
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let sample_file =
+        std::fs::File::open(dir.to_owned() + "/tests/resources/real_sample.wav").unwrap();
+    let wav_reader = hound::WavReader::new(std::io::BufReader::new(sample_file)).unwrap();
+    let wav_spec = crate::WavFmt {
+        sample_rate: wav_reader.spec().sample_rate as usize,
+        sample_format: wav_reader.spec().sample_format,
+        bits_per_sample: wav_reader.spec().bits_per_sample,
+        channels: wav_reader.spec().channels,
+        endianness: crate::Endianness::Little,
+    };
+    println!("{:?}", wav_spec);
+    let mut encoder = crate::internal::WAVEncoder::new(
+        &wav_spec,
+        crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::DETECTOR_INTERNAL_SAMPLE_RATE,
+    )
+    .unwrap();
+    let input_length = encoder.get_input_frame_length();
+    let output_length = encoder.get_output_frame_length();
+    assert_ne!(
+        input_length, output_length,
+        "input and output not have same length"
+    );
+    assert_eq!(input_length, 1440, "input size is correct");
+    assert_eq!(output_length, 480, "output size is correct");
+    let samples = wav_reader
+        .into_samples::<f32>()
+        .map(|chunk| *chunk.as_ref().unwrap())
+        .collect::<Vec<_>>();
+    let internal_spec = hound::WavSpec {
+        sample_rate: crate::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+        channels: 1,
+    };
+    let mut writer = hound::WavWriter::create(
+        dir.to_owned() + "/tests/resources/gain_normalized_band-pass_example.wav",
+        internal_spec,
+    )
+    .unwrap();
+    let mut gain_filter = crate::internal::GainNormalizerFilter::new(0.1, 1., Some(0.003));
+    let mut filter = BandPassFilter::new(crate::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    samples
+        .chunks_exact(encoder.get_input_frame_length())
+        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|mut chunk| {
+            let rms_level = crate::internal::GainNormalizerFilter::get_rms_level(&chunk);
+            gain_filter.filter(&mut chunk, rms_level);
+            filter.filter(&mut chunk);
+            chunk
+        })
+        .for_each(|encoded_chunk| {
+            for sample in encoded_chunk {
+                writer.write_sample(sample).ok();
+            }
+        });
+    writer.finalize().expect("Unable to save file");
 }
