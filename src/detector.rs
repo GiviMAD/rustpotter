@@ -20,10 +20,10 @@ use crate::{
 /// // load and enable a wakeword
 /// rustpotter.add_wakeword_from_file("./tests/resources/oye_casa_g.rpw").unwrap();
 /// // You need a buffer of size rustpotter.get_samples_per_frame() when using samples or rustpotter.get_bytes_per_frame() when using bytes.  
-/// let mut frame_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
+/// let mut sample_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
 /// // while true { Iterate forever
 ///     // fill the buffer with the required samples/bytes...
-///    let detection = rustpotter.process_i16(sample_buffer);
+///    let detection = rustpotter.process_i16(&sample_buffer);
 ///     if let Some(detection) = detection {
 ///         println!("{:?}", detection);
 ///     }
@@ -334,19 +334,37 @@ impl Rustpotter {
                     },
                 );
                 let mut sorted_scores = scores.values().copied().collect::<Vec<f32>>();
-                sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
                 let score = match self.score_mode {
-                    ScoreMode::Max => sorted_scores[0],
-                    ScoreMode::Median => {
-                        let trunc_mid = sorted_scores.len() / 2;
-                        if trunc_mid != 0 && sorted_scores.len() % 2 == 0 {
-                            (sorted_scores[trunc_mid] + sorted_scores[trunc_mid - 1]) / 2.
-                        } else {
-                            sorted_scores[trunc_mid]
-                        }
-                    }
                     ScoreMode::Average => {
                         sorted_scores.iter().sum::<f32>() / sorted_scores.len() as f32
+                    }
+                    ScoreMode::Max => {
+                        sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+                        sorted_scores[0]
+                    }
+                    ScoreMode::Median | ScoreMode::P50 => {
+                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        self.get_percentile(&sorted_scores, 50.)
+                    }
+                    ScoreMode::P25 => {
+                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        self.get_percentile(&sorted_scores, 25.)
+                    }
+                    ScoreMode::P75 => {
+                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        self.get_percentile(&sorted_scores, 75.)
+                    }
+                    ScoreMode::P80 => {
+                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        self.get_percentile(&sorted_scores, 80.)
+                    }
+                    ScoreMode::P90 => {
+                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        self.get_percentile(&sorted_scores, 90.)
+                    }
+                    ScoreMode::P95 => {
+                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        self.get_percentile(&sorted_scores, 95.)
                     }
                 };
                 if score > threshold {
@@ -412,6 +430,18 @@ impl Rustpotter {
                 .collect::<Vec<_>>(),
         );
         score
+    }
+    fn get_percentile(&self, sorted_values: &[f32], percentile: f32) -> f32 {
+        let n = sorted_values.len();
+        let index = percentile / 100.0 * (n - 1) as f32;
+        let index_floor = index.floor();
+        if index_floor == index {
+            sorted_values[index as usize]
+        } else {
+            let i = index_floor as usize;
+            let d = index - index_floor;
+            sorted_values[i] * (1.0 - d) + sorted_values[i + 1] * d
+        }
     }
 }
 /// Encapsulates the detection information.

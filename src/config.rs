@@ -98,8 +98,14 @@ pub struct FiltersConfig {
 #[derive(Clone, Copy)]
 pub enum ScoreMode {
     Average,
-    Median,
     Max,
+    Median,
+    P25,
+    P50,
+    P75,
+    P80,
+    P90,
+    P95,
 }
 /// Configures the detector scoring behavior.
 #[cfg_attr(feature = "debug", derive(Debug))]
