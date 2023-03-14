@@ -15,7 +15,7 @@ You can see Rustpotter a composition of the following tools:
 * A `wav encoder`: Used to support different the input formats, re-encodes the samples to the internal format (16000Hz - 32bit - float - mono) when needed.
 * A `gain-normalizer filter`: Used to dynamically change the input loudness in base to a reference level. (Can be disabled)
 * A `bass-pass filter`: Used to attenuate frequencies outside the configured range. (Can be disabled)
-* A `feature extractor`: used to generate 3 vector of features from  each input chuck.
+* A `feature extractor`: used to generate 3 vector of features from each input chuck. This called features are the [Mel Frequency Cepstral Coeﬃcients](https://en.wikipedia.org/wiki/Mel-frequency_cepstrum) of the audio.
 * A `feature comparator`: used to calculate de similarity between two sets of feature vectors (two matrix of features) using a [DTW](https://en.wikipedia.org/wiki/Dynamic_time_warping) algorithm.
 
 ## Overview
@@ -29,10 +29,34 @@ From the moment the window has the correct size, Rustpotter start to compare thi
 A detection is considered a `partial detection` (not emitted) until n more frames are processed (half of the length of the features window).
 If in this time a detection with a higher score is found, it replaces the current partial detection and the this countdown is reset.
 
-Note that the `cpu usage` will increase depending on the number of available feature frame vectors in the wakewords (the number of wav files used to created the wakeword instance).
-In order to reduce the cpu usage, Rustpotter generates a single matrix of features by averaging all the others ones. This one will score less that the others but can be used to skip the further comparison against the other matrixes of features inside the wakeword. You can set the `avg_threshold` option to zero to disable this.
+### Averaged Threshold
 
-## The Wakeword
+Note that Rustpotter `cpu usage` increases depending on the number of available feature frame vectors in the wakewords (the number of wav files used to create the wakeword), as for each new features Rustpotter has to run the score operation against each of them.
+
+In order to reduce the cpu usage, for each wakeword, Rustpotter generates a `single matrix of features by averaging all` the others ones. This one will score less that the others but can be used to skip the further comparison against the other matrixes of features inside the wakeword. You can set the `avg_threshold` config to zero to disable this.
+
+### Audio Filters
+
+As described before rustpotter includes two audio filter implementation: a `gain-normalizer filter` and a `bass-pass filter`.
+
+Those are disabled by default and their main purpose is to improve the detector performance on presence of noise.
+
+### Partial detections
+
+In order to discard false detections you can require a certain amount of partial detections to occur. This is configured through the `min_scores` config option.
+
+### Score Mode
+
+As explained rustpotter scores the live audio matrix of features against each of matrix of features in the wakeword. The it needs to unify these scores into a single one.
+
+You configure how this is done using the `score_mode` option, the following modes are available:
+
+* Avg: Use the averaged/mean value.
+* Max: Use max value.
+* Median: Use the median. Equivalent to P50.
+* P25, P50, P75, P80, P90, P95: Use the indicated percentile value. Linear interpolation between the values is used on non exact matches.
+
+### Wakeword
 
 Using the `struct Wakeword`, the features can be extracted from wav files, persisted to a model file, or loaded from a previous generated model.
 
@@ -40,9 +64,9 @@ Note that this `doesn't work with raw wav files`, it parses the file format from
 
 The detector supports adding multiple wakewords. 
 
-## The Detection
+### Detection
 
-A successful Rustpotter detection try to provide you with all relevant information about the detection process so you know how to configure the detector/improve your wakewords to achieve a good operation (no missed detections + no false detections).
+A successful Rustpotter detection provides you with all the relevant information about the detection process so you know how to configure the detector to achieve a good configuration (minimize the number of misses/false detections).
 
 It looks like this:
 
@@ -50,11 +74,11 @@ It looks like this:
 RustpotterDetection {
     /// Detected wakeword name.
     name: "hey home",
-    /// Detection score against the averaged feature frames. (zero if disabled)
-    avg_score: 0.21601, 
+    /// Detection score against the averaged features matrix. (zero if disabled)
+    avg_score: 0.41601, 
     /// Detection score. (calculated from the scores using the selected score mode).
     score: 0.6618781, 
-    /// Detection scores against each template.
+    /// Detection score against each template.
     scores: {
         "hey_home_g_5.wav": 0.63050425, 
         "hey_home_g_3.wav": 0.6301979, 
@@ -69,7 +93,7 @@ RustpotterDetection {
 }
 ```
 
-Rustpotter exposes a reference to the current partial detection, to allow read access to it if needed.
+Rustpotter exposes a reference to the current partial detection that allows read access to it for debugging purposes.
 
 ## Web Demos
 
@@ -128,11 +152,14 @@ This project started as a port of the project [node-personal-wakeword](https://g
 ## Motivation
 
 The motivation behind this project is to learn about audio analysis and the Rust language/ecosystem.
+
 I have no prior experience with any of those so don't expect this to be a production grade tool.
 
-## Note
+## Contributing
 
-Feel encourage to suggest any improvements that you have in mind, about the code or the detection process.
+Feel encourage to suggest/contribute any improvements that you have in mind, about the code or the detection process.
+
+Open an issue if you need any assistance about it.
 
 Best regards!
 
