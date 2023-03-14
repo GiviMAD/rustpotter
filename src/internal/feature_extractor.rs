@@ -108,7 +108,7 @@ impl FeatureExtractor {
         magnitude_spectrum: &[f32],
     ) -> Vec<f32> {
         let mfccs: Vec<f32> = self
-            .calculate_mel_frequency_spectrum(magnitude_spectrum)
+            .calculate_mel_frequency_cepstrum(magnitude_spectrum)
             .iter()
             .map(|ms| (ms + f32::MIN_POSITIVE).ln())
             .collect();
@@ -117,7 +117,7 @@ impl FeatureExtractor {
     fn frequency_to_mel(frequency: usize) -> f32 {
         1127. * (1. + (frequency as f32 / 700.0)).ln()
     }
-    fn calculate_mel_frequency_spectrum(&self, magnitude_spectrum: &[f32]) -> Vec<f32> {
+    fn calculate_mel_frequency_cepstrum(&self, magnitude_spectrum: &[f32]) -> Vec<f32> {
         (0..self.num_coefficients)
             .map(|i| {
                 magnitude_spectrum
