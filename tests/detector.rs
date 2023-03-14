@@ -125,6 +125,91 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_and_band_pass_audio_fi
     assert_eq!(detected_wakewords[1].score, 0.58341914);
 }
 
+#[test]
+fn it_can_detect_wakewords_on_record_with_noise() {
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.3;
+    config.detector.threshold = 0.47;
+    config.filters.gain_normalizer.enabled = false;
+    config.filters.band_pass.enabled = false;
+    config.detector.score_mode = ScoreMode::Max;
+    config.detector.min_scores = 5;
+    let detected_wakewords =
+        run_detection_with_real_audio(config, "/tests/resources/oye_casa_real.rpw");
+    assert_eq!(detected_wakewords.len(), 3);
+    assert_eq!(detected_wakewords[0].avg_score, 0.46770155);
+    assert_eq!(detected_wakewords[0].score, 0.52799696);
+    assert_eq!(detected_wakewords[0].counter, 24);
+    assert_eq!(detected_wakewords[1].avg_score, 0.32864225);
+    assert_eq!(detected_wakewords[1].score, 0.48123348);
+    assert_eq!(detected_wakewords[1].counter, 7);
+    assert_eq!(detected_wakewords[2].avg_score, 0.3080874);
+    assert_eq!(detected_wakewords[2].score, 0.51648504);
+    assert_eq!(detected_wakewords[2].counter, 35);
+}
+
+#[test]
+fn it_can_detect_wakewords_on_record_with_noise_using_filters() {
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.3;
+    config.detector.threshold = 0.49;
+    config.filters.gain_normalizer.enabled = true;
+    config.filters.gain_normalizer.min_gain = 0.4;
+    config.filters.band_pass.enabled = true;
+    config.filters.band_pass.low_cutoff = 210.0;
+    config.filters.band_pass.high_cutoff = 700.0;
+    config.detector.score_mode = ScoreMode::Max;
+    config.detector.min_scores = 5;
+    let detected_wakewords =
+        run_detection_with_real_audio(config, "/tests/resources/oye_casa_real.rpw");
+    assert_eq!(detected_wakewords.len(), 3);
+    assert_eq!(detected_wakewords[0].avg_score, 0.45496845);
+    assert_eq!(detected_wakewords[0].score, 0.5380491);
+    assert_eq!(detected_wakewords[0].counter, 23);
+    assert_eq!(detected_wakewords[1].avg_score, 0.33620673);
+    assert_eq!(detected_wakewords[1].score, 0.5001495);
+    assert_eq!(detected_wakewords[1].counter, 5);
+    assert_eq!(detected_wakewords[2].avg_score, 0.3049725);
+    assert_eq!(detected_wakewords[2].score, 0.51896006);
+    assert_eq!(detected_wakewords[2].counter, 31);
+}
+
+fn run_detection_with_real_audio(
+    mut config: RustpotterConfig,
+    model_path: &str,
+) -> Vec<rustpotter::RustpotterDetection> {
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let audio_path = dir.to_owned() + "/tests/resources/real_sample.wav";
+    let audio_file = std::fs::File::open(audio_path).unwrap();
+    let wav_reader = hound::WavReader::new(std::io::BufReader::new(audio_file)).unwrap();
+    let wav_spec = rustpotter::WavFmt {
+        sample_rate: wav_reader.spec().sample_rate as usize,
+        sample_format: wav_reader.spec().sample_format,
+        bits_per_sample: wav_reader.spec().bits_per_sample,
+        channels: wav_reader.spec().channels,
+        endianness: rustpotter::Endianness::Little,
+    };
+    config.fmt = wav_spec;
+    let mut rustpotter = Rustpotter::new(&config).unwrap();
+    let model_path = dir.to_owned() + model_path;
+    rustpotter.add_wakeword_from_file(&model_path).unwrap();
+    let mut audio_samples = wav_reader
+        .into_samples::<f32>()
+        .map(|chunk| *chunk.as_ref().unwrap())
+        .collect::<Vec<_>>();
+    let mut silence = vec![0_f32; config.fmt.sample_rate * 5];
+    audio_samples.append(&mut silence);
+    let detected_wakewords = audio_samples
+        .chunks_exact(rustpotter.get_samples_per_frame())
+        .filter_map(|audio_buffer| rustpotter.process_f32(audio_buffer))
+        .map(|detection| {
+            print_detection(&detection);
+            detection
+        })
+        .collect::<Vec<_>>();
+    detected_wakewords
+}
+
 fn run_detection_simulation(
     config: RustpotterConfig,
     model_path: &str,

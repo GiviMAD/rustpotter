@@ -16,7 +16,7 @@ fn it_creates_a_new_wakeword_from_samples() {
 }
 
 #[test]
-fn it_creates_a_new_wakeword_from_samples_which_saves_to_file() {
+fn it_creates_a_new_wakeword_from_int_samples_which_saves_to_file() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let samples = vec![
         dir.to_owned() + "/tests/resources/oye_casa_g_1.wav",
@@ -31,7 +31,7 @@ fn it_creates_a_new_wakeword_from_samples_which_saves_to_file() {
 }
 
 #[test]
-fn it_creates_another_wakeword_from_samples_which_saves_to_file() {
+fn it_creates_another_wakeword_from_int_samples_which_saves_to_file() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let samples = vec![
         dir.to_owned() + "/tests/resources/alexa.wav",
@@ -40,6 +40,23 @@ fn it_creates_another_wakeword_from_samples_which_saves_to_file() {
     ];
     let wakeword = Wakeword::new_from_sample_files("alexa".to_string(), None, None, samples).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/alexa.rpw";
+    wakeword.save_to_file(&model_path).unwrap();
+}
+
+
+#[test]
+fn it_creates_wakeword_from_float_samples_which_saves_to_file() {
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let samples = vec![
+        dir.to_owned() + "/tests/resources/oye_casa_real_1.wav",
+        dir.to_owned() + "/tests/resources/oye_casa_real_2.wav",
+        dir.to_owned() + "/tests/resources/oye_casa_real_3.wav",
+        dir.to_owned() + "/tests/resources/oye_casa_real_4.wav",
+        dir.to_owned() + "/tests/resources/oye_casa_real_5.wav",
+        dir.to_owned() + "/tests/resources/oye_casa_real_6.wav",
+    ];
+    let wakeword = Wakeword::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+    let model_path = dir.to_owned() + "/tests/resources/oye_casa_real.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
 
