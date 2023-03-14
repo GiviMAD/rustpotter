@@ -1,19 +1,27 @@
-/// Rustpotter, an open source wake word spotter forged in rust.
-extern crate savefile;
-#[macro_use]
-extern crate savefile_derive;
+pub(crate) const DETECTOR_DEFAULT_AVG_THRESHOLD: f32 = 0.2;
+pub(crate) const DETECTOR_DEFAULT_THRESHOLD: f32 = 0.5;
+pub(crate) const DETECTOR_DEFAULT_MIN_SCORES: usize = 5;
+pub(crate) const DETECTOR_INTERNAL_SAMPLE_RATE: usize = 16000;
+pub(crate) const FEATURE_EXTRACTOR_FRAME_LENGTH_MS: usize = 30;
+pub(crate) const FEATURE_EXTRACTOR_FRAME_SHIFT_MS: usize = 10;
+pub(crate) const FEATURE_EXTRACTOR_NUM_COEFFICIENT: usize = 6;
+pub(crate) const FEATURE_EXTRACTOR_PRE_EMPHASIS: f32 = 0.97;
+pub(crate) const FEATURE_COMPARATOR_DEFAULT_BAND_SIZE: u16 = 5;
+pub(crate) const FEATURE_COMPARATOR_DEFAULT_REFERENCE: f32 = 0.22;
 
-mod comparator;
-mod utils;
+mod config;
 mod detector;
-mod detector_builder;
-mod dtw;
+mod internal;
 mod wakeword;
-pub use detector::DetectedWakeword;
-pub use detector::NoiseDetectionMode;
-pub use detector::SampleFormat;
-pub use detector::Endianness;
-#[cfg(feature = "vad")]
-pub use detector::VadMode;
-pub use detector::WakewordDetector;
-pub use detector_builder::WakewordDetectorBuilder;
+pub use config::BandPassConfig;
+pub use config::DetectorConfig;
+pub use config::Endianness;
+pub use config::FiltersConfig;
+pub use config::GainNormalizationConfig;
+pub use config::RustpotterConfig;
+pub use config::SampleFormat;
+pub use config::ScoreMode;
+pub use config::WavFmt;
+pub use detector::Rustpotter;
+pub use detector::RustpotterDetection;
+pub use wakeword::Wakeword;

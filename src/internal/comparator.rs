@@ -1,13 +1,22 @@
-use crate::dtw;
+use super::Dtw;
 use std::cmp;
 
 pub struct FeatureComparator {
-    band_size: usize,
+    band_size: u16,
     reference: f32,
 }
 impl FeatureComparator {
+    pub fn new(band_size: u16, reference: f32) -> Self {
+        FeatureComparator {
+            band_size,
+            reference,
+        }
+    }
+    pub fn calculate_distance(ax: &[f32], bx: &[f32]) -> f32 {
+        1. - cosine_similarity(ax, bx)
+    }
     pub fn compare(&self, a: &[&[f32]], b: &[&[f32]]) -> f32 {
-        let mut dtw = dtw::new(calculate_distance);
+        let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
         let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size);
         let normalized_cost = cost / (a.len() + b.len()) as f32;
         self.compute_probability(normalized_cost)
@@ -15,16 +24,6 @@ impl FeatureComparator {
     fn compute_probability(&self, cost: f32) -> f32 {
         1. / (1. + ((cost - self.reference) / self.reference).exp())
     }
-    pub fn new(band_size: usize, reference: f32) -> Self {
-        FeatureComparator {
-            band_size,
-            reference,
-        }
-    }
-}
-
-pub fn calculate_distance(ax: &[f32], bx: &[f32]) -> f32 {
-    1. - cosine_similarity(ax, bx)
 }
 
 pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {
