@@ -1,6 +1,6 @@
 [package]
 name = "rustpotter"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "An open source wakeword spotter forged in rust."
@@ -23,3 +23,4 @@ serde =  { version = "1.0.152", features = ["derive"], default-features = false 
 [features]
 default = ["debug"]
 debug = []
+internals = []
