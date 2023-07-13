@@ -5,9 +5,13 @@ use crate::{
         BandPassFilter, FeatureComparator, FeatureExtractor, FeatureNormalizer,
         GainNormalizerFilter, WAVEncoder,
     },
-    RustpotterConfig, ScoreMode, Wakeword, DETECTOR_INTERNAL_SAMPLE_RATE,
-    FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
-    FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
+    RustpotterConfig, ScoreMode, Wakeword,
+};
+
+use crate::constants::{
+    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+    FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
+    FEATURE_EXTRACTOR_PRE_EMPHASIS,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```

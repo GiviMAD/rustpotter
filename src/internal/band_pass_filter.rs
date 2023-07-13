@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-pub(crate) struct BandPassFilter {
+pub struct BandPassFilter {
     // options
     a0: f32,
     a1: f32,
@@ -67,8 +67,8 @@ fn filter_audio() {
     println!("{:?}", wav_spec);
     let mut encoder = crate::internal::WAVEncoder::new(
         &wav_spec,
-        crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-        crate::DETECTOR_INTERNAL_SAMPLE_RATE,
+        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
     let input_length = encoder.get_input_frame_length();
@@ -84,7 +84,7 @@ fn filter_audio() {
         .map(|chunk| *chunk.as_ref().unwrap())
         .collect::<Vec<_>>();
     let internal_spec = hound::WavSpec {
-        sample_rate: crate::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
+        sample_rate: crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
         channels: 1,
@@ -94,7 +94,7 @@ fn filter_audio() {
         internal_spec,
     )
     .unwrap();
-    let mut filter = BandPassFilter::new(crate::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    let mut filter = BandPassFilter::new(crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
     samples
         .chunks_exact(encoder.get_input_frame_length())
         .map(|chuck| encoder.reencode_float(chuck))
@@ -126,8 +126,8 @@ fn filter_gain_normalized_audio() {
     println!("{:?}", wav_spec);
     let mut encoder = crate::internal::WAVEncoder::new(
         &wav_spec,
-        crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-        crate::DETECTOR_INTERNAL_SAMPLE_RATE,
+        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
     let input_length = encoder.get_input_frame_length();
@@ -143,7 +143,7 @@ fn filter_gain_normalized_audio() {
         .map(|chunk| *chunk.as_ref().unwrap())
         .collect::<Vec<_>>();
     let internal_spec = hound::WavSpec {
-        sample_rate: crate::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
+        sample_rate: crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
         channels: 1,
@@ -154,7 +154,7 @@ fn filter_gain_normalized_audio() {
     )
     .unwrap();
     let mut gain_filter = crate::internal::GainNormalizerFilter::new(0.1, 1., Some(0.003));
-    let mut filter = BandPassFilter::new(crate::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    let mut filter = BandPassFilter::new(crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
     samples
         .chunks_exact(encoder.get_input_frame_length())
         .map(|chuck| encoder.reencode_float(chuck))

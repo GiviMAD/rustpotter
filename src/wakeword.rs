@@ -3,14 +3,18 @@ use std::{cmp::Ordering, collections::HashMap, fs::File, io::BufReader, path::Pa
 use ciborium::{de, ser};
 use hound::WavReader;
 
+use crate::constants::{
+    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+    FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
+    FEATURE_EXTRACTOR_PRE_EMPHASIS,
+};
+
 use crate::{
     internal::{
         Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, GainNormalizerFilter,
         WAVEncoder,
     },
-    Endianness, SampleFormat, WavFmt, DETECTOR_INTERNAL_SAMPLE_RATE,
-    FEATURE_EXTRACTOR_FRAME_LENGTH_MS, FEATURE_EXTRACTOR_FRAME_SHIFT_MS,
-    FEATURE_EXTRACTOR_NUM_COEFFICIENT, FEATURE_EXTRACTOR_PRE_EMPHASIS,
+    Endianness, SampleFormat, WavFmt,
 };
 use serde::{Deserialize, Serialize};
 

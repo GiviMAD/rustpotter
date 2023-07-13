@@ -1,14 +1,5 @@
-pub(crate) const DETECTOR_DEFAULT_AVG_THRESHOLD: f32 = 0.2;
-pub(crate) const DETECTOR_DEFAULT_THRESHOLD: f32 = 0.5;
-pub(crate) const DETECTOR_DEFAULT_MIN_SCORES: usize = 5;
-pub(crate) const DETECTOR_INTERNAL_SAMPLE_RATE: usize = 16000;
-pub(crate) const FEATURE_EXTRACTOR_FRAME_LENGTH_MS: usize = 30;
-pub(crate) const FEATURE_EXTRACTOR_FRAME_SHIFT_MS: usize = 10;
-pub(crate) const FEATURE_EXTRACTOR_NUM_COEFFICIENT: usize = 6;
-pub(crate) const FEATURE_EXTRACTOR_PRE_EMPHASIS: f32 = 0.97;
-pub(crate) const FEATURE_COMPARATOR_DEFAULT_BAND_SIZE: u16 = 5;
-pub(crate) const FEATURE_COMPARATOR_DEFAULT_REFERENCE: f32 = 0.22;
 
+mod constants;
 mod config;
 mod detector;
 mod internal;
@@ -25,3 +16,13 @@ pub use config::WavFmt;
 pub use detector::Rustpotter;
 pub use detector::RustpotterDetection;
 pub use wakeword::Wakeword;
+#[cfg(feature = "internals")]
+pub use constants::DETECTOR_INTERNAL_SAMPLE_RATE;
+#[cfg(feature = "internals")]
+pub use constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS;
+#[cfg(feature = "internals")]
+pub use internal::BandPassFilter;
+#[cfg(feature = "internals")]
+pub use internal::GainNormalizerFilter;
+#[cfg(feature = "internals")]
+pub use internal::WAVEncoder;

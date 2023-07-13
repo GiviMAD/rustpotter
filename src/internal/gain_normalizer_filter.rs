@@ -1,4 +1,4 @@
-pub(crate) struct GainNormalizerFilter {
+pub struct GainNormalizerFilter {
     window_size: usize,
     fixed_rms_level: bool,
     min_gain: f32,
@@ -77,8 +77,8 @@ fn filter_audio() {
     println!("{:?}", wav_spec);
     let mut encoder = crate::internal::WAVEncoder::new(
         &wav_spec,
-        crate::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-        crate::DETECTOR_INTERNAL_SAMPLE_RATE,
+        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
     let input_length = encoder.get_input_frame_length();
@@ -94,7 +94,7 @@ fn filter_audio() {
         .map(|chunk| *chunk.as_ref().unwrap())
         .collect::<Vec<_>>();
     let internal_spec = hound::WavSpec {
-        sample_rate: crate::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
+        sample_rate: crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as u32,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
         channels: 1,
