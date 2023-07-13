@@ -105,7 +105,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 0.2, 5.);
     assert_eq!(detected_wakewords.len(), 2);
     assert_eq!(detected_wakewords[0].score, 0.7304294);
-    assert_eq!(detected_wakewords[1].score, 0.71067363);
+    assert_eq!(detected_wakewords[1].score, 0.71067846);
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_and_band_pass_audio_fi
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 0.2, 5.);
     assert_eq!(detected_wakewords.len(), 2);
     assert_eq!(detected_wakewords[0].score, 0.5775406);
-    assert_eq!(detected_wakewords[1].score, 0.58341914);
+    assert_eq!(detected_wakewords[1].score, 0.5828695);
 }
 
 #[test]
@@ -163,14 +163,14 @@ fn it_can_detect_wakewords_on_record_with_noise_using_filters() {
     let detected_wakewords =
         run_detection_with_real_audio(config, "/tests/resources/oye_casa_real.rpw");
     assert_eq!(detected_wakewords.len(), 3);
-    assert_eq!(detected_wakewords[0].avg_score, 0.45496845);
-    assert_eq!(detected_wakewords[0].score, 0.5380491);
+    assert_eq!(detected_wakewords[0].avg_score, 0.4548729);
+    assert_eq!(detected_wakewords[0].score, 0.5380252);
     assert_eq!(detected_wakewords[0].counter, 23);
-    assert_eq!(detected_wakewords[1].avg_score, 0.33620673);
-    assert_eq!(detected_wakewords[1].score, 0.5001495);
+    assert_eq!(detected_wakewords[1].avg_score, 0.33614534);
+    assert_eq!(detected_wakewords[1].score, 0.500146);
     assert_eq!(detected_wakewords[1].counter, 5);
-    assert_eq!(detected_wakewords[2].avg_score, 0.3049725);
-    assert_eq!(detected_wakewords[2].score, 0.51896006);
+    assert_eq!(detected_wakewords[2].avg_score, 0.30494267);
+    assert_eq!(detected_wakewords[2].score, 0.51890975);
     assert_eq!(detected_wakewords[2].counter, 31);
 }
 

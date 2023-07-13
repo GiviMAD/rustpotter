@@ -5,6 +5,7 @@ pub struct GainNormalizerFilter {
     max_gain: f32,
     // state
     rms_level_ref: f32,
+    rms_level_sqrt: f32,
     rms_level_window: Vec<f32>,
 }
 impl GainNormalizerFilter {
@@ -19,7 +20,7 @@ impl GainNormalizerFilter {
             let frame_rms_level =
                 self.rms_level_window.iter().sum::<f32>() / self.rms_level_window.len() as f32;
             // calculate the gain to apply
-            let mut gain = self.rms_level_ref / frame_rms_level;
+            let mut gain = self.rms_level_sqrt / frame_rms_level.sqrt();
             // range and round the value, trying to get a mostly uniform gain between frames.
             gain = ((gain * 10.).round() / 10.).clamp(self.min_gain, self.max_gain);
             // apply gain unless irrelevant
@@ -39,6 +40,7 @@ impl GainNormalizerFilter {
     pub fn set_rms_level_ref(&mut self, rms_level: f32, window_size: usize) {
         if !self.fixed_rms_level {
             self.rms_level_ref = rms_level;
+            self.rms_level_sqrt = rms_level.sqrt();
         }
         self.window_size = if window_size != 0 { window_size } else { 1 };
     }
@@ -54,6 +56,7 @@ impl GainNormalizerFilter {
             min_gain,
             max_gain,
             rms_level_ref: fixed_rms_level.unwrap_or(f32::NAN),
+            rms_level_sqrt: fixed_rms_level.map(|s| s.sqrt()).unwrap_or(f32::NAN),
             fixed_rms_level: fixed_rms_level.is_some(),
             rms_level_window: Vec::new(),
             window_size: 1,
