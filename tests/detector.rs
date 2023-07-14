@@ -137,14 +137,14 @@ fn it_can_detect_wakewords_on_record_with_noise() {
     let detected_wakewords =
         run_detection_with_real_audio(config, "/tests/resources/oye_casa_real.rpw");
     assert_eq!(detected_wakewords.len(), 3);
-    assert_eq!(detected_wakewords[0].avg_score, 0.46770155);
-    assert_eq!(detected_wakewords[0].score, 0.52799696);
+    assert_eq!(detected_wakewords[0].avg_score, 0.4676845);
+    assert_eq!(detected_wakewords[0].score, 0.527971);
     assert_eq!(detected_wakewords[0].counter, 24);
-    assert_eq!(detected_wakewords[1].avg_score, 0.32864225);
-    assert_eq!(detected_wakewords[1].score, 0.48123348);
+    assert_eq!(detected_wakewords[1].avg_score, 0.32865646);
+    assert_eq!(detected_wakewords[1].score, 0.48120698);
     assert_eq!(detected_wakewords[1].counter, 7);
-    assert_eq!(detected_wakewords[2].avg_score, 0.3080874);
-    assert_eq!(detected_wakewords[2].score, 0.51648504);
+    assert_eq!(detected_wakewords[2].avg_score, 0.30807483);
+    assert_eq!(detected_wakewords[2].score, 0.5164661);
     assert_eq!(detected_wakewords[2].counter, 35);
 }
 
@@ -163,14 +163,14 @@ fn it_can_detect_wakewords_on_record_with_noise_using_filters() {
     let detected_wakewords =
         run_detection_with_real_audio(config, "/tests/resources/oye_casa_real.rpw");
     assert_eq!(detected_wakewords.len(), 3);
-    assert_eq!(detected_wakewords[0].avg_score, 0.4548729);
-    assert_eq!(detected_wakewords[0].score, 0.5380252);
+    assert_eq!(detected_wakewords[0].avg_score, 0.45487034);
+    assert_eq!(detected_wakewords[0].score, 0.5380105);
     assert_eq!(detected_wakewords[0].counter, 23);
-    assert_eq!(detected_wakewords[1].avg_score, 0.33614534);
-    assert_eq!(detected_wakewords[1].score, 0.500146);
+    assert_eq!(detected_wakewords[1].avg_score, 0.33616057);
+    assert_eq!(detected_wakewords[1].score, 0.50012267);
     assert_eq!(detected_wakewords[1].counter, 5);
-    assert_eq!(detected_wakewords[2].avg_score, 0.30494267);
-    assert_eq!(detected_wakewords[2].score, 0.51890975);
+    assert_eq!(detected_wakewords[2].avg_score, 0.30491996);
+    assert_eq!(detected_wakewords[2].score, 0.5188978);
     assert_eq!(detected_wakewords[2].counter, 31);
 }
 

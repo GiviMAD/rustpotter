@@ -120,12 +120,12 @@ impl WAVEncoder {
                 input_samples_per_frame,
                 output_samples_per_frame,
                 resampler_out_buffer: if resampler.is_some() {
-                    Some(resampler.as_ref().unwrap().output_buffer_allocate())
+                    Some(resampler.as_ref().unwrap().output_buffer_allocate(true))
                 } else {
                     None
                 },
                 resampler_input_buffer: if resampler.is_some() {
-                    Some(resampler.as_ref().unwrap().input_buffer_allocate())
+                    Some(resampler.as_ref().unwrap().input_buffer_allocate(false))
                 } else {
                     None
                 },
