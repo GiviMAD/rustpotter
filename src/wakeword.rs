@@ -208,7 +208,7 @@ fn compute_avg_samples_features(
             equality
         }
     });
-    let mut template_vec = template_values
+    let template_vec = template_values
         .iter()
         .map(|(_, sample)| sample.to_vec())
         .collect::<Vec<Vec<Vec<f32>>>>();
