@@ -65,7 +65,7 @@ fn filter_audio() {
         endianness: crate::Endianness::Little,
     };
     println!("{:?}", wav_spec);
-    let mut encoder = crate::internal::WAVEncoder::new(
+    let mut encoder = crate::audio::WAVEncoder::new(
         &wav_spec,
         crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
@@ -128,7 +128,7 @@ fn filter_gain_normalized_audio() {
         endianness: crate::Endianness::Little,
     };
     println!("{:?}", wav_spec);
-    let mut encoder = crate::internal::WAVEncoder::new(
+    let mut encoder = crate::audio::WAVEncoder::new(
         &wav_spec,
         crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
@@ -157,7 +157,7 @@ fn filter_gain_normalized_audio() {
         internal_spec,
     )
     .unwrap();
-    let mut gain_filter = crate::internal::GainNormalizerFilter::new(0.1, 1., Some(0.003));
+    let mut gain_filter = crate::audio::GainNormalizerFilter::new(0.1, 1., Some(0.003));
     let mut filter = BandPassFilter::new(
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32,
         80.,
@@ -167,7 +167,7 @@ fn filter_gain_normalized_audio() {
         .chunks_exact(encoder.get_input_frame_length())
         .map(|chuck| encoder.reencode_float(chuck))
         .map(|mut chunk| {
-            let rms_level = crate::internal::GainNormalizerFilter::get_rms_level(&chunk);
+            let rms_level = crate::audio::GainNormalizerFilter::get_rms_level(&chunk);
             gain_filter.filter(&mut chunk, rms_level);
             filter.filter(&mut chunk);
             chunk

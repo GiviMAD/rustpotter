@@ -1,15 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
+    audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     },
-    internal::{
-        BandPassFilter, FeatureComparator, FeatureExtractor, FeatureNormalizer,
-        GainNormalizerFilter, WAVEncoder,
-    },
+    mfcc::{FeatureComparator, FeatureExtractor, FeatureNormalizer},
     nn::WakewordNN,
     DeserializableWakeword, RustpotterConfig, ScoreMode, Wakeword, WakewordModel,
 };

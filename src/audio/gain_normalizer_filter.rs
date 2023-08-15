@@ -78,7 +78,7 @@ fn filter_audio() {
         endianness: crate::Endianness::Little,
     };
     println!("{:?}", wav_spec);
-    let mut encoder = crate::internal::WAVEncoder::new(
+    let mut encoder = crate::audio::WAVEncoder::new(
         &wav_spec,
         crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,

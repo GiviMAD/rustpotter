@@ -1,13 +1,11 @@
 use crate::{
+    audio::{GainNormalizerFilter, WAVEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
         FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     },
-    internal::{
-        Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, GainNormalizerFilter,
-        WAVEncoder,
-    },
+    mfcc::{Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer},
     wakeword_serde::{DeserializableWakeword, SerializableWakeword},
     Endianness, SampleFormat, WavFmt,
 };
