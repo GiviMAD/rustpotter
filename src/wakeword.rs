@@ -5,7 +5,7 @@ use crate::{
         FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     },
-    mfcc::{Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer},
+    mfcc::{MfccAverager, MfccExtractor, MfccNormalizer},
     wakeword_serde::{DeserializableWakeword, SerializableWakeword},
     Endianness, SampleFormat, WavFmt,
 };
@@ -137,7 +137,7 @@ pub(crate) fn compute_sample_features<R: std::io::Read>(
     let samples_per_shift = (samples_per_frame as f32
         / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32))
         as usize;
-    let mut feature_extractor = FeatureExtractor::new(
+    let mut feature_extractor = MfccExtractor::new(
         DETECTOR_INTERNAL_SAMPLE_RATE,
         samples_per_frame,
         samples_per_shift,
@@ -191,7 +191,7 @@ pub(crate) fn compute_sample_features<R: std::io::Read>(
             }
             acc
         });
-    Ok(FeatureNormalizer::normalize(sample_features))
+    Ok(MfccNormalizer::normalize(sample_features))
 }
 fn compute_avg_samples_features(
     templates: &HashMap<String, Vec<Vec<f32>>>,
@@ -212,39 +212,8 @@ fn compute_avg_samples_features(
         .iter()
         .map(|(_, sample)| sample.to_vec())
         .collect::<Vec<Vec<Vec<f32>>>>();
-    let mut origin = template_vec.drain(0..1).next().unwrap();
-    for frames in template_vec.iter() {
-        let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
-        dtw.compute_optimal_path(
-            &origin.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-            &frames.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-        );
-        let mut avgs = origin
-            .iter()
-            .map(|x| x.iter().map(|&y| vec![y]).collect::<Vec<_>>())
-            .collect::<Vec<_>>();
-        dtw.retrieve_optimal_path()
-            .unwrap()
-            .into_iter()
-            .for_each(|[x, y]| {
-                frames[y].iter().enumerate().for_each(|(index, feature)| {
-                    avgs[x][index].push(*feature);
-                })
-            });
-        origin = avgs
-            .iter()
-            .map(|x| {
-                x.iter()
-                    .map(|feature_group| {
-                        feature_group.to_vec().iter().sum::<f32>() / feature_group.len() as f32
-                    })
-                    .collect::<Vec<f32>>()
-            })
-            .collect::<Vec<_>>();
-    }
-    Some(origin)
+    MfccAverager::average(template_vec)
 }
-
 fn calc_median(mut values: Vec<f32>) -> f32 {
     values.sort_by(|a, b| a.total_cmp(b));
     let truncated_mid = values.len() / 2;

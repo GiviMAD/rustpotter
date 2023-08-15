@@ -1,5 +1,5 @@
-pub struct FeatureNormalizer {}
-impl FeatureNormalizer {
+pub struct MfccNormalizer {}
+impl MfccNormalizer {
     pub fn normalize(frames: Vec<Vec<f32>>) -> Vec<Vec<f32>> {
         let num_frames = frames.len();
         if num_frames == 0 {

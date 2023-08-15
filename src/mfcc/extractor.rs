@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use rustfft::{num_complex::Complex32, FftPlanner};
 
-pub struct FeatureExtractor {
+pub struct MfccExtractor {
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
     samples_per_frame: usize,
@@ -14,18 +14,18 @@ pub struct FeatureExtractor {
     samples: Vec<f32>,
 }
 
-impl FeatureExtractor {
+impl MfccExtractor {
     pub fn new(
         sample_rate: usize,
         samples_per_frame: usize,
         samples_per_shift: usize,
         num_coefficients: usize,
         pre_emphasis_coefficient: f32,
-    ) -> FeatureExtractor {
+    ) -> MfccExtractor {
         let min_frequency = 0;
         let max_frequency = sample_rate / 2;
         let magnitude_spectrum_size = samples_per_frame / 2;
-        FeatureExtractor {
+        MfccExtractor {
             samples: vec![],
             samples_per_shift,
             samples_per_frame,

@@ -7,7 +7,7 @@ use crate::{
         FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     },
-    mfcc::{FeatureComparator, FeatureExtractor, FeatureNormalizer},
+    mfcc::{MfccComparator, MfccExtractor, MfccNormalizer},
     nn::WakewordNN,
     DeserializableWakeword, RustpotterConfig, ScoreMode, Wakeword, WakewordModel,
 };
@@ -45,9 +45,9 @@ pub struct Rustpotter {
     /// Utility to encode or re-encode the input wav data.
     wav_encoder: WAVEncoder,
     /// Utility to extract a collection of features for each input audio frame.
-    feature_extractor: FeatureExtractor,
+    feature_extractor: MfccExtractor,
     /// Utility to measure the similarity between two feature frame vectors.
-    feature_comparator: FeatureComparator,
+    feature_comparator: MfccComparator,
     /// Optional band-pass filter implementation.
     band_pass_filter: Option<BandPassFilter>,
     /// Optional gain filter implementation.
@@ -89,14 +89,14 @@ impl Rustpotter {
         let samples_per_shift = (samples_per_frame as f32
             / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32))
             as usize;
-        let feature_extractor = FeatureExtractor::new(
+        let feature_extractor = MfccExtractor::new(
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
             FEATURE_EXTRACTOR_NUM_COEFFICIENT,
             FEATURE_EXTRACTOR_PRE_EMPHASIS,
         );
-        let feature_comparator = FeatureComparator::new(
+        let feature_comparator = MfccComparator::new(
             config.detector.comparator_band_size,
             config.detector.comparator_ref,
         );
@@ -476,7 +476,7 @@ impl Rustpotter {
         if features.len() > max_len {
             features.drain(max_len..features.len());
         }
-        FeatureNormalizer::normalize(features)
+        MfccNormalizer::normalize(features)
     }
     fn score_frame(&self, frame_features: &[Vec<f32>], template: &[Vec<f32>]) -> f32 {
         let score = self.feature_comparator.compare(
