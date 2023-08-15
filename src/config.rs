@@ -146,4 +146,3 @@ pub struct RustpotterConfig {
     /// Configures input audio filters.
     pub filters: FiltersConfig,
 }
-

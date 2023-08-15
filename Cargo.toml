@@ -1,6 +1,6 @@
 [package]
 name = "rustpotter"
-version = "2.0.1"
+version = "3.0.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "An open source wakeword spotter forged in rust."
@@ -14,10 +14,13 @@ exclude = [
 ]
 
 [dependencies]
+candle-core = "0.1.1"
+candle-nn = "0.1.1"
 ciborium = "0.2.0"
 hound = "3.4.0"
 rubato = { version = "0.14.1", default-features = false }
 rustfft = { version = "6.1.0", default-features = false }
+safetensors = "0.3.2"
 serde =  { version = "1.0.152", features = ["derive"], default-features = false }
 
 [features]

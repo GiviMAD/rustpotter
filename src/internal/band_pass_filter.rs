@@ -94,7 +94,11 @@ fn filter_audio() {
         internal_spec,
     )
     .unwrap();
-    let mut filter = BandPassFilter::new(crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    let mut filter = BandPassFilter::new(
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32,
+        80.,
+        400.,
+    );
     samples
         .chunks_exact(encoder.get_input_frame_length())
         .map(|chuck| encoder.reencode_float(chuck))
@@ -154,7 +158,11 @@ fn filter_gain_normalized_audio() {
     )
     .unwrap();
     let mut gain_filter = crate::internal::GainNormalizerFilter::new(0.1, 1., Some(0.003));
-    let mut filter = BandPassFilter::new(crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    let mut filter = BandPassFilter::new(
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32,
+        80.,
+        400.,
+    );
     samples
         .chunks_exact(encoder.get_input_frame_length())
         .map(|chuck| encoder.reencode_float(chuck))

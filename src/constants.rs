@@ -6,5 +6,7 @@ pub(crate) const DETECTOR_DEFAULT_MIN_SCORES: usize = 5;
 pub(crate) const FEATURE_EXTRACTOR_FRAME_SHIFT_MS: usize = 10;
 pub(crate) const FEATURE_EXTRACTOR_NUM_COEFFICIENT: usize = 6;
 pub(crate) const FEATURE_EXTRACTOR_PRE_EMPHASIS: f32 = 0.97;
+pub(crate) const FEATURE_EXTRACTOR_NUM_FEATURES: usize = FEATURE_EXTRACTOR_NUM_COEFFICIENT - 1;
 pub(crate) const FEATURE_COMPARATOR_DEFAULT_BAND_SIZE: u16 = 5;
 pub(crate) const FEATURE_COMPARATOR_DEFAULT_REFERENCE: f32 = 0.22;
+pub(crate) const NN_NONE_LABEL: &str = "none";

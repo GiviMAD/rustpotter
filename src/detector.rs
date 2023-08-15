@@ -1,17 +1,17 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
+    constants::{
+        DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
+        FEATURE_EXTRACTOR_PRE_EMPHASIS,
+    },
     internal::{
         BandPassFilter, FeatureComparator, FeatureExtractor, FeatureNormalizer,
         GainNormalizerFilter, WAVEncoder,
     },
-    RustpotterConfig, ScoreMode, Wakeword,
-};
-
-use crate::constants::{
-    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-    FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
-    FEATURE_EXTRACTOR_PRE_EMPHASIS,
+    nn::WakewordNN,
+    DeserializableWakeword, RustpotterConfig, ScoreMode, Wakeword, WakewordModel,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```
@@ -57,6 +57,8 @@ pub struct Rustpotter {
     // State
     /// The collection of wakewords to run detection against.
     wakewords: Vec<Wakeword>,
+    /// The collection of wakewords to run detection against.
+    wakeword_nns: Vec<WakewordNN>,
     /// Indicates that the audio_features_window has enough features to run the detection.
     /// This means its length is greater or equal to the max_features_frames value.
     buffering: bool,
@@ -132,6 +134,7 @@ impl Rustpotter {
             buffering: true,
             max_features_frames: 0,
             wakewords: Vec::new(),
+            wakeword_nns: Vec::new(),
             partial_detection: None,
             detection_countdown: 0,
             rms_level: 0.,
@@ -146,8 +149,25 @@ impl Rustpotter {
     /// Remove wakeword by name.
     pub fn remove_wakeword(&mut self, name: &str) -> bool {
         let len = self.wakewords.len();
-        self.wakewords.retain(|w| !w.name.eq(name));
+        self.wakewords.retain(|w: &Wakeword| !w.name.eq(name));
         if len != self.wakewords.len() {
+            self.on_wakeword_change();
+            true
+        } else {
+            false
+        }
+    }
+    /// Add wakeword model to the detector.
+    pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) {
+        self.wakeword_nns.push(wakeword.get_nn());
+        self.on_wakeword_change();
+    }
+    /// Remove wakeword model by label
+    pub fn remove_wakeword_model(&mut self, label: &str) -> bool {
+        let len = self.wakewords.len();
+        self.wakeword_nns
+            .retain(|w: &WakewordNN| !w.contains_label(label));
+        if len != self.wakeword_nns.len() {
             self.on_wakeword_change();
             true
         } else {
@@ -170,6 +190,9 @@ impl Rustpotter {
                 target_rms_level = wakeword.rms_level.max(target_rms_level);
             }
         }
+        for wakeword in self.wakeword_nns.iter() {
+            max_feature_frames = wakeword.get_required_features().max(max_feature_frames);
+        }
         self.max_features_frames = max_feature_frames;
         if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
             gain_normalizer_filter
@@ -179,11 +202,21 @@ impl Rustpotter {
     }
     /// Add wakeword from model bytes.
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
-        Wakeword::load_from_buffer(buffer).map(|wakeword| self.add_wakeword(wakeword))
+        Wakeword::load_from_buffer(buffer)
+            .map(|wakeword| self.add_wakeword(wakeword))
+            .or_else(|_| {
+                WakewordModel::load_from_buffer(buffer)
+                    .map(|wakeword| self.add_wakeword_model(wakeword))
+            })
     }
     /// Add wakeword from model path.
     pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
-        Wakeword::load_from_file(path).map(|wakeword| self.add_wakeword(wakeword))
+        Wakeword::load_from_file(path)
+            .map(|wakeword| self.add_wakeword(wakeword))
+            .or_else(|_| {
+                WakewordModel::load_from_file(path)
+                    .map(|wakeword| self.add_wakeword_model(wakeword))
+            })
     }
     /// Returns the number of audio samples needed by the detector.
     pub fn get_samples_per_frame(&self) -> usize {
@@ -297,6 +330,55 @@ impl Rustpotter {
         result
     }
     fn run_detection(&mut self) -> Option<RustpotterDetection> {
+        let wakeword_detection = self
+            .run_detection_by_comparison()
+            .or_else(|| self.run_detection_by_nn())
+            .map(|mut detection| {
+                detection.counter = self.partial_detection.as_ref().map_or(1, |d| d.counter + 1);
+                detection.gain = self.gain;
+                detection
+            });
+        if self.partial_detection.is_some() && self.detection_countdown == 0 {
+            let wakeword_detection = self.partial_detection.take().unwrap();
+            if wakeword_detection.counter >= self.min_scores {
+                self.buffering = true;
+                self.audio_features_window.clear();
+                self.feature_extractor.reset();
+                Some(wakeword_detection)
+            } else {
+                None
+            }
+        } else {
+            if wakeword_detection.is_some() {
+                if self.partial_detection.is_none()
+                    || self.partial_detection.as_ref().unwrap().score
+                        < wakeword_detection.as_ref().unwrap().score
+                {
+                    self.partial_detection = wakeword_detection;
+                } else {
+                    let partial_detection = self.partial_detection.as_mut().unwrap();
+                    partial_detection.counter = wakeword_detection.as_ref().unwrap().counter;
+                    partial_detection.gain = self.gain;
+                }
+                self.detection_countdown = self.max_features_frames / 2;
+            }
+            None
+        }
+    }
+
+    fn run_detection_by_nn(&mut self) -> Option<RustpotterDetection> {
+        self.wakeword_nns
+            .iter()
+            .filter_map(|nn| {
+                nn.run_detection(self.cut_and_normalize_frame(
+                    self.audio_features_window.to_vec(),
+                    nn.get_required_features(),
+                ))
+            })
+            .next()
+    }
+
+    fn run_detection_by_comparison(&mut self) -> Option<RustpotterDetection> {
         if self.detection_countdown != 0 {
             self.detection_countdown -= 1;
         }
@@ -343,31 +425,31 @@ impl Rustpotter {
                         sorted_scores.iter().sum::<f32>() / sorted_scores.len() as f32
                     }
                     ScoreMode::Max => {
-                        sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| b.total_cmp(a));
                         sorted_scores[0]
                     }
                     ScoreMode::Median | ScoreMode::P50 => {
-                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
                         self.get_percentile(&sorted_scores, 50.)
                     }
                     ScoreMode::P25 => {
-                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
                         self.get_percentile(&sorted_scores, 25.)
                     }
                     ScoreMode::P75 => {
-                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
                         self.get_percentile(&sorted_scores, 75.)
                     }
                     ScoreMode::P80 => {
-                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
                         self.get_percentile(&sorted_scores, 80.)
                     }
                     ScoreMode::P90 => {
-                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
                         self.get_percentile(&sorted_scores, 90.)
                     }
                     ScoreMode::P95 => {
-                        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
                         self.get_percentile(&sorted_scores, 95.)
                     }
                 };
@@ -377,43 +459,16 @@ impl Rustpotter {
                         avg_score,
                         score,
                         scores,
-                        counter: self.partial_detection.as_ref().map_or(1, |d| d.counter + 1),
-                        gain: self.gain,
+                        counter: usize::MIN, // added by the detector
+                        gain: f32::NAN,      // added by the detector
                     })
                 } else {
                     None
                 }
             })
             .collect::<Vec<RustpotterDetection>>();
-        wakeword_detections
-            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
-        let wakeword_detection = wakeword_detections.into_iter().next();
-        if self.partial_detection.is_some() && self.detection_countdown == 0 {
-            let wakeword_detection = self.partial_detection.take().unwrap();
-            if wakeword_detection.counter >= self.min_scores {
-                self.buffering = true;
-                self.audio_features_window.clear();
-                self.feature_extractor.reset();
-                Some(wakeword_detection)
-            } else {
-                None
-            }
-        } else {
-            if wakeword_detection.is_some() {
-                if self.partial_detection.is_none()
-                    || self.partial_detection.as_ref().unwrap().score
-                        < wakeword_detection.as_ref().unwrap().score
-                {
-                    self.partial_detection = wakeword_detection;
-                } else {
-                    let partial_detection = self.partial_detection.as_mut().unwrap();
-                    partial_detection.counter = wakeword_detection.as_ref().unwrap().counter;
-                    partial_detection.gain = self.gain;
-                }
-                self.detection_countdown = self.max_features_frames / 2;
-            }
-            None
-        }
+        wakeword_detections.sort_by(|a, b| b.score.total_cmp(&a.score));
+        wakeword_detections.into_iter().next()
     }
     fn cut_and_normalize_frame(
         &self,

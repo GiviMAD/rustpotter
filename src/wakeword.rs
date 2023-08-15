@@ -1,22 +1,19 @@
-use std::{cmp::Ordering, collections::HashMap, fs::File, io::BufReader, path::Path};
-
-use ciborium::{de, ser};
-use hound::WavReader;
-
-use crate::constants::{
-    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-    FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
-    FEATURE_EXTRACTOR_PRE_EMPHASIS,
-};
-
 use crate::{
+    constants::{
+        DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
+        FEATURE_EXTRACTOR_PRE_EMPHASIS,
+    },
     internal::{
         Dtw, FeatureComparator, FeatureExtractor, FeatureNormalizer, GainNormalizerFilter,
         WAVEncoder,
     },
+    wakeword_serde::{DeserializableWakeword, SerializableWakeword},
     Endianness, SampleFormat, WavFmt,
 };
+use hound::WavReader;
 use serde::{Deserialize, Serialize};
+use std::{cmp::Ordering, collections::HashMap, fs::File, io::BufReader, path::Path};
 
 /// Wakeword representation.
 #[derive(Serialize, Deserialize)]
@@ -29,38 +26,9 @@ pub struct Wakeword {
     pub rms_level: f32,
     pub enabled: bool,
 }
+impl SerializableWakeword for Wakeword {}
+impl DeserializableWakeword for Wakeword {}
 impl Wakeword {
-    pub fn save_to_file(&self, path: &str) -> Result<(), String> {
-        let mut file = match File::create(path) {
-            Ok(it) => it,
-            Err(err) => {
-                return Err("Unable to open file ".to_owned() + path + ": " + &err.to_string())
-            }
-        };
-        ser::into_writer(self, &mut file).map_err(|err| err.to_string())?;
-        Ok(())
-    }
-    pub fn save_to_buffer(&self) -> Result<Vec<u8>, String> {
-        let mut bytes: Vec<u8> = Vec::new();
-        ser::into_writer(self, &mut bytes).map_err(|err| err.to_string())?;
-        Ok(bytes)
-    }
-    pub fn load_from_file(path: &str) -> Result<Wakeword, String> {
-        let file = match File::open(path) {
-            Ok(it) => it,
-            Err(err) => {
-                return Err("Unable to open file ".to_owned() + path + ": " + &err.to_string())
-            }
-        };
-        let reader = BufReader::new(file);
-        let wakeword: Wakeword = de::from_reader(reader).map_err(|err| err.to_string())?;
-        Ok(wakeword)
-    }
-    pub fn load_from_buffer(buffer: &[u8]) -> Result<Wakeword, String> {
-        let reader = BufReader::new(buffer);
-        let wakeword: Wakeword = de::from_reader(reader).map_err(|err| err.to_string())?;
-        Ok(wakeword)
-    }
     pub fn new(
         name: String,
         threshold: Option<f32>,
@@ -150,7 +118,7 @@ impl Wakeword {
     }
 }
 
-fn compute_sample_features<R: std::io::Read>(
+pub(crate) fn compute_sample_features<R: std::io::Read>(
     buffer_reader: BufReader<R>,
     out_rms_level: &mut f32,
 ) -> Result<Vec<Vec<f32>>, String> {
@@ -280,7 +248,7 @@ fn compute_avg_samples_features(
 }
 
 fn calc_median(mut values: Vec<f32>) -> f32 {
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    values.sort_by(|a, b| a.total_cmp(b));
     let truncated_mid = values.len() / 2;
     if values.is_empty() {
         0.
