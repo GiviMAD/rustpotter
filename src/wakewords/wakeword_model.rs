@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    nn::{TrainableWakeword, WakewordNN},
-    wakeword_serde::{DeserializableWakeword, SerializableWakeword},
-};
+use crate::nn::{WakewordModelTrain, WakewordNN};
+
+use super::{DeserializableWakeword, SerializableWakeword};
 #[derive(Serialize, Deserialize)]
 pub struct WakewordModel {
     pub labels: Vec<String>,
     pub train_size: usize,
     pub model_weights: ModelWeights,
+    pub rms_level: f32,
 }
 
 impl SerializableWakeword for WakewordModel {}
@@ -30,4 +30,4 @@ pub struct TensorData {
 }
 pub type ModelWeights = HashMap<String, TensorData>;
 
-impl TrainableWakeword for WakewordModel {}
+impl WakewordModelTrain for WakewordModel {}

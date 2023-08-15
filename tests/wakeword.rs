@@ -1,5 +1,5 @@
 use rustpotter::{
-    DeserializableWakeword, SerializableWakeword, TrainableWakeword, Wakeword, WakewordModel,
+    DeserializableWakeword, SerializableWakeword, WakewordModelTrain, WakewordRef, WakewordModel, WakewordRefBuildFromFiles
 };
 
 #[test]
@@ -14,7 +14,7 @@ fn it_creates_a_new_wakeword_from_samples() {
     ];
     let n_samples = samples.len();
     let wakeword =
-        Wakeword::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
     assert_eq!(
         wakeword.samples_features.len(),
         n_samples,
@@ -33,7 +33,7 @@ fn it_creates_a_new_wakeword_from_int_samples_which_saves_to_file() {
         dir.to_owned() + "/tests/resources/oye_casa_g_5.wav",
     ];
     let wakeword =
-        Wakeword::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
@@ -47,7 +47,7 @@ fn it_creates_another_wakeword_from_int_samples_which_saves_to_file() {
         dir.to_owned() + "/tests/resources/alexa3.wav",
     ];
     let wakeword =
-        Wakeword::new_from_sample_files("alexa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("alexa".to_string(), None, None, samples).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/alexa.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
@@ -64,7 +64,7 @@ fn it_creates_wakeword_from_float_samples_which_saves_to_file() {
         dir.to_owned() + "/tests/resources/oye_casa_real_6.wav",
     ];
     let wakeword =
-        Wakeword::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_real.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
@@ -74,7 +74,7 @@ fn it_loads_a_wakeword_from_file() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let n_samples = 5;
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
-    let wakeword = Wakeword::load_from_file(&model_path).unwrap();
+    let wakeword = WakewordRef::load_from_file(&model_path).unwrap();
     assert_eq!(
         wakeword.samples_features.len(),
         n_samples,

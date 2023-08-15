@@ -25,7 +25,11 @@ impl MfccComparator {
         1. / (1. + ((cost - self.reference) / self.reference).exp())
     }
 }
-
+impl Clone for MfccComparator {
+    fn clone(&self) -> Self {
+       Self::new(self.band_size, self.reference)
+    }
+}
 pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {
     let dimensionality = cmp::min(vector_a.len(), vector_b.len());
     let mut dot_ab = 0.;

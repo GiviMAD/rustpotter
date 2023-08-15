@@ -42,7 +42,7 @@ impl MfccExtractor {
             hamming_window: Self::new_hamming_window(samples_per_frame),
         }
     }
-    pub fn compute_features(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
+    pub fn compute(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
         audio_samples
             .chunks_exact(self.samples_per_shift)
             .filter_map(|audio_part| self.process_audio_part(audio_part))

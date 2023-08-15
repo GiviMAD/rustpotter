@@ -1,6 +1,7 @@
 use super::wakeword_nn::{flat_features, get_tensors_data, new_model_impl, Mlp, ModelImpl};
 use crate::{
-    constants::FEATURE_EXTRACTOR_NUM_FEATURES, wakeword_model::ModelWeights, WakewordModel,
+    constants::FEATURE_EXTRACTOR_NUM_FEATURES, mfcc::MfccWavFileExtractor,
+    wakewords::ModelWeights, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
@@ -10,7 +11,7 @@ use std::{
     io::{BufReader, Error, ErrorKind},
 };
 
-pub trait TrainableWakeword {
+pub trait WakewordModelTrain {
     fn train_from_sample_buffers(
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
@@ -34,8 +35,12 @@ pub trait TrainableWakeword {
             .as_ref()
             .map(|m| m.labels.clone())
             .unwrap_or_else(Vec::new);
-        let mut labeled_features = get_features_labeled(&samples, &mut labels, true)?;
-        let mut test_labeled_features = get_features_labeled(&test_samples, &mut labels, false)?;
+        let mut ref_rms_level: f32 = f32::NAN;
+        let mut labeled_features =
+            get_features_labeled(&samples, &mut labels, &mut ref_rms_level, true)?;
+        let mut noop_rms_level: f32 = f32::NAN;
+        let mut test_labeled_features =
+            get_features_labeled(&test_samples, &mut labels, &mut noop_rms_level, false)?;
         println!("Train samples {}.", labeled_features.len());
         println!("Test samples {}.", test_labeled_features.len());
         println!("Labels: {:?}.", labels);
@@ -80,6 +85,7 @@ pub trait TrainableWakeword {
             labels,
             train_size: input_len / FEATURE_EXTRACTOR_NUM_FEATURES,
             model_weights: var_tensors,
+            rms_level: ref_rms_level,
         })
     }
     fn train_from_sample_dirs(
@@ -209,10 +215,10 @@ fn convert_error(err: candle_core::Error) -> Error {
 fn get_features_labeled(
     samples: &HashMap<String, Vec<u8>>,
     labels: &mut Vec<String>,
+    sample_rms_level: &mut f32,
     new_labels: bool,
 ) -> Result<Vec<(Vec<f32>, u32)>, Error> {
     let mut labeled_data: Vec<(Vec<f32>, u32)> = Vec::new();
-    let mut sample_rms_level = 0.;
     for (name, buffer) in samples {
         let init_token_index = name.chars().position(|c| c == '[');
         let end_token_index = name.chars().position(|c| c == ']');
@@ -234,17 +240,18 @@ fn get_features_labeled(
                 ));
             }
         }
-        let label_index = labels
-            .iter()
-            .position(|r| r.eq_ignore_ascii_case(&label))
-            .unwrap() as u32;
-        let features = crate::wakeword::compute_sample_features(
+        let label_index = labels.iter().position(|r| r.eq(&label)).unwrap() as u32;
+        let mut tmp_sample_rms_level: f32 = 0.;
+        let mfccs = MfccWavFileExtractor::compute_features(
             BufReader::new(buffer.as_slice()),
-            &mut sample_rms_level,
+            &mut tmp_sample_rms_level,
         )
         .map_err(|msg| Error::new(ErrorKind::Other, msg))?;
-        let flatten_features = flat_features(features);
-        labeled_data.push((flatten_features, label_index));
+        if sample_rms_level.is_nan() {
+            *sample_rms_level = (*sample_rms_level + tmp_sample_rms_level) / 2.;
+        }
+        let flatten_mfccs = flat_features(mfccs);
+        labeled_data.push((flatten_mfccs, label_index));
     }
     Ok(labeled_data)
 }

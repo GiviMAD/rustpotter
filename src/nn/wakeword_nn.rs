@@ -1,6 +1,7 @@
 use crate::{
     constants::{FEATURE_EXTRACTOR_NUM_FEATURES, NN_NONE_LABEL},
-    wakeword_model::{ModelWeights, TensorData},
+    wakewords::WakewordDetector,
+    wakewords::{ModelWeights, TensorData},
     RustpotterDetection, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, Var};
@@ -12,6 +13,7 @@ pub(crate) struct WakewordNN {
     model: Mlp,
     features_size: usize,
     labels: Vec<String>,
+    rms_level: f32,
 }
 
 impl WakewordNN {
@@ -28,34 +30,10 @@ impl WakewordNN {
         WakewordNN {
             _vars: vars,
             model,
+            rms_level: wakeword_model.rms_level,
             labels: wakeword_model.labels.clone(),
             features_size: wakeword_model.train_size,
         }
-    }
-    pub fn contains_label(&self, label: &str) -> bool {
-        self.labels.contains(&label.to_string())
-    }
-    pub fn get_required_features(&self) -> usize {
-        self.features_size
-    }
-    pub fn run_detection(&self, features: Vec<Vec<f32>>) -> Option<RustpotterDetection> {
-        assert!(features.len() == self.features_size);
-        Tensor::from_iter(flat_features(features).into_iter(), &Device::Cpu)
-            .and_then(|tensor| Tensor::stack(&[tensor], 0))
-            .and_then(|tensor_stack| self.model.forward(&tensor_stack))
-            .and_then(|logits| logits.get(0))
-            .and_then(|logits1| logits1.to_vec1::<f32>())
-            .map_err(|err| {
-                println!("Error running wakeword nn: {}", err);
-                err
-            })
-            .ok()
-            .map(|prob_vec| {
-                self.get_label(&prob_vec)
-                    .map(|label| self.run_detection_by_label(&label, &prob_vec))
-                    .unwrap_or(None)
-            })
-            .unwrap_or(None)
     }
 
     fn get_label(&self, prob_vec: &[f32]) -> Option<&str> {
@@ -73,7 +51,7 @@ impl WakewordNN {
             })
     }
     fn run_detection_by_label(&self, label: &str, prob_vec: &[f32]) -> Option<RustpotterDetection> {
-        if !NN_NONE_LABEL.eq_ignore_ascii_case(&label) {
+        if !NN_NONE_LABEL.eq(label) {
             let scores: HashMap<String, f32> = prob_vec
                 .iter()
                 .enumerate()
@@ -97,6 +75,58 @@ impl WakewordNN {
         } else {
             None
         }
+    }
+
+    fn predict_labels(&self, mfcc_frame: Vec<Vec<f32>>) -> Option<Vec<f32>> {
+        Tensor::from_iter(flat_features(mfcc_frame).into_iter(), &Device::Cpu)
+            .and_then(|tensor| Tensor::stack(&[tensor], 0))
+            .and_then(|tensor_stack| self.model.forward(&tensor_stack))
+            .and_then(|logits| logits.get(0))
+            .and_then(|logits1| logits1.to_vec1::<f32>())
+            .map_err(|err| {
+                println!("Error running wakeword nn: {}", err);
+                err
+            })
+            .ok()
+    }
+    fn validate_scores(
+        &self,
+        detection: RustpotterDetection,
+        threshold: f32,
+        avg_threshold: f32,
+    ) -> Option<RustpotterDetection> {
+        if detection.score >= threshold && detection.avg_score >= avg_threshold {
+            Some(detection)
+        } else {
+            None
+        }
+    }
+
+    fn handle_probabilities(&self, prob_vec: Vec<f32>) -> Option<RustpotterDetection> {
+        self.get_label(&prob_vec)
+            .and_then(|label| self.run_detection_by_label(&label, &prob_vec))
+    }
+}
+impl WakewordDetector for WakewordNN {
+    fn get_mfcc_frame_size(&self) -> usize {
+        self.features_size
+    }
+    fn run_detection(
+        &self,
+        mut mfcc_frame: Vec<Vec<f32>>,
+        avg_threshold: f32,
+        threshold: f32,
+    ) -> Option<RustpotterDetection> {
+        mfcc_frame.truncate(self.features_size);
+        self.predict_labels(mfcc_frame)
+            .and_then(|prob_vec| self.handle_probabilities(prob_vec))
+            .and_then(|detection| self.validate_scores(detection, threshold, avg_threshold))
+    }
+    fn contains(&self, name: &str) -> bool {
+        self.labels.contains(&name.to_string())
+    }
+    fn get_rms_level(&self) -> f32 {
+        self.rms_level
     }
 }
 

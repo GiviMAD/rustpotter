@@ -7,13 +7,13 @@ use crate::{
         FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
         FEATURE_EXTRACTOR_PRE_EMPHASIS,
     },
-    mfcc::{MfccComparator, MfccExtractor, MfccNormalizer},
-    nn::WakewordNN,
-    DeserializableWakeword, RustpotterConfig, ScoreMode, Wakeword, WakewordModel,
+    mfcc::{MfccComparator, MfccExtractor},
+    wakewords::WakewordDetector,
+    DeserializableWakeword, RustpotterConfig, ScoreMode, WakewordRef, WakewordModel,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```
-/// use rustpotter::{Rustpotter, RustpotterConfig, Wakeword};
+/// use rustpotter::{Rustpotter, RustpotterConfig};
 /// // assuming the audio input format match the rustpotter defaults
 /// let mut rustpotter_config = RustpotterConfig::default();
 /// // Configure the rustpotter
@@ -44,27 +44,25 @@ pub struct Rustpotter {
     // Utils
     /// Utility to encode or re-encode the input wav data.
     wav_encoder: WAVEncoder,
-    /// Utility to extract a collection of features for each input audio frame.
-    feature_extractor: MfccExtractor,
+    /// Utility to extract a collection of mfcc for each input audio frame.
+    mfcc_extractor: MfccExtractor,
     /// Utility to measure the similarity between two feature frame vectors.
-    feature_comparator: MfccComparator,
+    mfcc_comparator: MfccComparator,
     /// Optional band-pass filter implementation.
     band_pass_filter: Option<BandPassFilter>,
     /// Optional gain filter implementation.
     gain_normalizer_filter: Option<GainNormalizerFilter>,
     // State
-    /// The collection of wakewords to run detection against.
-    wakewords: Vec<Wakeword>,
-    /// The collection of wakewords to run detection against.
-    wakeword_nns: Vec<WakewordNN>,
-    /// Indicates that the audio_features_window has enough features to run the detection.
-    /// This means its length is greater or equal to the max_features_frames value.
+    /// The collection of active wakewords detectors.
+    wakewords: Vec<Box<dyn WakewordDetector>>,
+    /// Indicates that the audio_mfcc_window has enough mfcc frames to run the detection.
+    /// This means its length is greater or equal to the max_mfcc_frames value.
     buffering: bool,
     /// A window of feature frames extract from the input audio.
-    /// It grows until match the max_features_frames value.
-    audio_features_window: Vec<Vec<f32>>,
+    /// It grows until match the max_mfcc_frames value.
+    audio_mfcc_window: Vec<Vec<f32>>,
     /// Max number of feature frames on the wakewords.
-    max_features_frames: usize,
+    max_mfcc_frames: usize,
     /// Stores the partial detection with greater score while waiting for the detection countdown to be zero.
     partial_detection: Option<RustpotterDetection>,
     /// Countdown until detection fires.
@@ -96,7 +94,7 @@ impl Rustpotter {
             FEATURE_EXTRACTOR_NUM_COEFFICIENT,
             FEATURE_EXTRACTOR_PRE_EMPHASIS,
         );
-        let feature_comparator = MfccComparator::new(
+        let mfcc_comparator = MfccComparator::new(
             config.detector.comparator_band_size,
             config.detector.comparator_ref,
         );
@@ -124,15 +122,14 @@ impl Rustpotter {
             min_scores: config.detector.min_scores,
             score_mode: config.detector.score_mode,
             wav_encoder: reencoder,
-            feature_extractor,
-            feature_comparator,
+            mfcc_extractor: feature_extractor,
+            mfcc_comparator,
             band_pass_filter,
             gain_normalizer_filter,
-            audio_features_window: Vec::new(),
+            audio_mfcc_window: Vec::new(),
             buffering: true,
-            max_features_frames: 0,
+            max_mfcc_frames: 0,
             wakewords: Vec::new(),
-            wakeword_nns: Vec::new(),
             partial_detection: None,
             detection_countdown: 0,
             rms_level: 0.,
@@ -140,32 +137,22 @@ impl Rustpotter {
         })
     }
     /// Add wakeword to the detector.
-    pub fn add_wakeword(&mut self, wakeword: Wakeword) {
-        self.wakewords.push(wakeword);
+    pub fn add_wakeword(&mut self, wakeword: WakewordRef) {
+        self.wakewords.push(Box::new(
+            wakeword.get_comparator(self.mfcc_comparator.clone(), self.score_mode),
+        ));
         self.on_wakeword_change();
-    }
-    /// Remove wakeword by name.
-    pub fn remove_wakeword(&mut self, name: &str) -> bool {
-        let len = self.wakewords.len();
-        self.wakewords.retain(|w: &Wakeword| !w.name.eq(name));
-        if len != self.wakewords.len() {
-            self.on_wakeword_change();
-            true
-        } else {
-            false
-        }
     }
     /// Add wakeword model to the detector.
     pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) {
-        self.wakeword_nns.push(wakeword.get_nn());
+        self.wakewords.push(Box::new(wakeword.get_nn()));
         self.on_wakeword_change();
     }
-    /// Remove wakeword model by label
-    pub fn remove_wakeword_model(&mut self, label: &str) -> bool {
+    /// Remove wakeword by name or label.
+    pub fn remove_wakeword(&mut self, name: &str) -> bool {
         let len = self.wakewords.len();
-        self.wakeword_nns
-            .retain(|w: &WakewordNN| !w.contains_label(label));
-        if len != self.wakeword_nns.len() {
+        self.wakewords.retain(|w| !w.contains(name));
+        if len != self.wakewords.len() {
             self.on_wakeword_change();
             true
         } else {
@@ -177,30 +164,22 @@ impl Rustpotter {
         let mut max_feature_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
-            if !wakeword.samples_features.is_empty() {
-                max_feature_frames = wakeword
-                    .samples_features
-                    .values()
-                    .map(Vec::len)
-                    .max()
-                    .unwrap_or(0)
-                    .max(max_feature_frames);
-                target_rms_level = wakeword.rms_level.max(target_rms_level);
-            }
+            max_feature_frames = wakeword
+                .as_ref()
+                .get_mfcc_frame_size()
+                .max(max_feature_frames);
+            target_rms_level = wakeword.get_rms_level().max(target_rms_level);
         }
-        for wakeword in self.wakeword_nns.iter() {
-            max_feature_frames = wakeword.get_required_features().max(max_feature_frames);
-        }
-        self.max_features_frames = max_feature_frames;
+        self.max_mfcc_frames = max_feature_frames;
         if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
             gain_normalizer_filter
-                .set_rms_level_ref(target_rms_level, self.max_features_frames / 3);
+                .set_rms_level_ref(target_rms_level, self.max_mfcc_frames / 3);
         }
-        self.buffering = self.audio_features_window.len() < self.max_features_frames;
+        self.buffering = self.audio_mfcc_window.len() < self.max_mfcc_frames;
     }
     /// Add wakeword from model bytes.
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
-        Wakeword::load_from_buffer(buffer)
+        WakewordRef::load_from_buffer(buffer)
             .map(|wakeword| self.add_wakeword(wakeword))
             .or_else(|_| {
                 WakewordModel::load_from_buffer(buffer)
@@ -209,7 +188,7 @@ impl Rustpotter {
     }
     /// Add wakeword from model path.
     pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
-        Wakeword::load_from_file(path)
+        WakewordRef::load_from_file(path)
             .map(|wakeword| self.add_wakeword(wakeword))
             .or_else(|_| {
                 WakewordModel::load_from_file(path)
@@ -308,40 +287,40 @@ impl Rustpotter {
                 .unwrap()
                 .filter(&mut audio_buffer);
         }
-        self.feature_extractor
-            .compute_features(&audio_buffer)
+        self.mfcc_extractor
+            .compute(&audio_buffer)
             .into_iter()
-            .find_map(|features| self.process_new_features(features))
+            .find_map(|mfccs| self.process_new_mfccs(mfccs))
     }
-    fn process_new_features(&mut self, features_frame: Vec<f32>) -> Option<RustpotterDetection> {
+    fn process_new_mfccs(&mut self, features_frame: Vec<f32>) -> Option<RustpotterDetection> {
         let mut result: Option<RustpotterDetection> = None;
-        self.audio_features_window.push(features_frame);
-        if self.audio_features_window.len() >= self.max_features_frames {
+        self.audio_mfcc_window.push(features_frame);
+        if self.audio_mfcc_window.len() >= self.max_mfcc_frames {
             if self.buffering {
                 self.buffering = false;
             }
             result = self.run_detection();
         }
-        if self.audio_features_window.len() >= self.max_features_frames {
-            self.audio_features_window.drain(0..1);
+        if self.audio_mfcc_window.len() >= self.max_mfcc_frames {
+            self.audio_mfcc_window.drain(0..1);
         }
         result
     }
     fn run_detection(&mut self) -> Option<RustpotterDetection> {
-        let wakeword_detection = self
-            .run_detection_by_comparison()
-            .or_else(|| self.run_detection_by_nn())
-            .map(|mut detection| {
-                detection.counter = self.partial_detection.as_ref().map_or(1, |d| d.counter + 1);
-                detection.gain = self.gain;
-                detection
-            });
+        if self.detection_countdown != 0 {
+            self.detection_countdown -= 1;
+        }
+        let wakeword_detection = self.run_wakeword_detectors().map(|mut detection| {
+            detection.counter = self.partial_detection.as_ref().map_or(1, |d| d.counter + 1);
+            detection.gain = self.gain;
+            detection
+        });
         if self.partial_detection.is_some() && self.detection_countdown == 0 {
             let wakeword_detection = self.partial_detection.take().unwrap();
             if wakeword_detection.counter >= self.min_scores {
                 self.buffering = true;
-                self.audio_features_window.clear();
-                self.feature_extractor.reset();
+                self.audio_mfcc_window.clear();
+                self.mfcc_extractor.reset();
                 Some(wakeword_detection)
             } else {
                 None
@@ -358,154 +337,26 @@ impl Rustpotter {
                     partial_detection.counter = wakeword_detection.as_ref().unwrap().counter;
                     partial_detection.gain = self.gain;
                 }
-                self.detection_countdown = self.max_features_frames / 2;
+                self.detection_countdown = self.max_mfcc_frames / 2;
             }
             None
         }
     }
 
-    fn run_detection_by_nn(&mut self) -> Option<RustpotterDetection> {
-        self.wakeword_nns
-            .iter()
-            .filter_map(|nn| {
-                nn.run_detection(self.cut_and_normalize_frame(
-                    self.audio_features_window.to_vec(),
-                    nn.get_required_features(),
-                ))
-            })
-            .filter_map(|detection| {
-                if detection.score >= self.threshold && detection.avg_score >= self.avg_threshold {
-                    Some(detection)
-                } else {
-                    None
-                }
-            })
-            .next()
-    }
-
-    fn run_detection_by_comparison(&mut self) -> Option<RustpotterDetection> {
-        if self.detection_countdown != 0 {
-            self.detection_countdown -= 1;
-        }
+    fn run_wakeword_detectors(&mut self) -> Option<RustpotterDetection> {
         let mut wakeword_detections = self
             .wakewords
             .iter()
             .filter_map(|wakeword| {
-                if !wakeword.enabled {
-                    return None;
-                }
-                let avg_threshold = wakeword.avg_threshold.unwrap_or(self.avg_threshold);
-                let mut avg_score = 0.;
-                if wakeword.avg_features.is_some() && avg_threshold != 0. {
-                    // discard detections against the wakeword averaged features
-                    let wakeword_samples_avg_features = wakeword.avg_features.as_ref().unwrap();
-                    let audio_window_normalized = self.cut_and_normalize_frame(
-                        self.audio_features_window.to_vec(),
-                        wakeword_samples_avg_features.len(),
-                    );
-                    avg_score =
-                        self.score_frame(&audio_window_normalized, wakeword_samples_avg_features);
-                    if avg_score < avg_threshold {
-                        return None;
-                    }
-                }
-                let threshold = wakeword.threshold.unwrap_or(self.threshold);
-                let scores = wakeword.samples_features.iter().fold(
-                    HashMap::new(),
-                    |mut acc: HashMap<String, f32>, (name, wakeword_sample_features)| {
-                        let frame_features_normalized = self.cut_and_normalize_frame(
-                            self.audio_features_window.to_vec(),
-                            wakeword_sample_features.len(),
-                        );
-                        acc.insert(
-                            name.to_string(),
-                            self.score_frame(&frame_features_normalized, wakeword_sample_features),
-                        );
-                        acc
-                    },
-                );
-                let mut sorted_scores = scores.values().copied().collect::<Vec<f32>>();
-                let score = match self.score_mode {
-                    ScoreMode::Average => {
-                        sorted_scores.iter().sum::<f32>() / sorted_scores.len() as f32
-                    }
-                    ScoreMode::Max => {
-                        sorted_scores.sort_by(|a, b| b.total_cmp(a));
-                        sorted_scores[0]
-                    }
-                    ScoreMode::Median | ScoreMode::P50 => {
-                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
-                        self.get_percentile(&sorted_scores, 50.)
-                    }
-                    ScoreMode::P25 => {
-                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
-                        self.get_percentile(&sorted_scores, 25.)
-                    }
-                    ScoreMode::P75 => {
-                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
-                        self.get_percentile(&sorted_scores, 75.)
-                    }
-                    ScoreMode::P80 => {
-                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
-                        self.get_percentile(&sorted_scores, 80.)
-                    }
-                    ScoreMode::P90 => {
-                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
-                        self.get_percentile(&sorted_scores, 90.)
-                    }
-                    ScoreMode::P95 => {
-                        sorted_scores.sort_by(|a, b| a.total_cmp(b));
-                        self.get_percentile(&sorted_scores, 95.)
-                    }
-                };
-                if score > threshold {
-                    Some(RustpotterDetection {
-                        name: wakeword.name.to_string(),
-                        avg_score,
-                        score,
-                        scores,
-                        counter: usize::MIN, // added by the detector
-                        gain: f32::NAN,      // added by the detector
-                    })
-                } else {
-                    None
-                }
+                wakeword.run_detection(
+                    self.audio_mfcc_window.to_vec(),
+                    self.avg_threshold,
+                    self.threshold,
+                )
             })
             .collect::<Vec<RustpotterDetection>>();
         wakeword_detections.sort_by(|a, b| b.score.total_cmp(&a.score));
         wakeword_detections.into_iter().next()
-    }
-    fn cut_and_normalize_frame(
-        &self,
-        mut features: Vec<Vec<f32>>,
-        max_len: usize,
-    ) -> Vec<Vec<f32>> {
-        if features.len() > max_len {
-            features.drain(max_len..features.len());
-        }
-        MfccNormalizer::normalize(features)
-    }
-    fn score_frame(&self, frame_features: &[Vec<f32>], template: &[Vec<f32>]) -> f32 {
-        let score = self.feature_comparator.compare(
-            &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
-            &frame_features
-                .iter()
-                .map(|item| &item[..])
-                .collect::<Vec<_>>(),
-        );
-        score
-    }
-    fn get_percentile(&self, sorted_values: &[f32], percentile: f32) -> f32 {
-        let n = sorted_values.len();
-        let index = percentile / 100.0 * (n - 1) as f32;
-        let index_floor = index.floor();
-        if index_floor == index {
-            sorted_values[index as usize]
-        } else {
-            let i = index_floor as usize;
-            let d = index - index_floor;
-            sorted_values[i] * (1.0 - d) + sorted_values[i + 1] * d
-        }
     }
 }
 /// Encapsulates the detection information.
