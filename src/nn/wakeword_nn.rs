@@ -101,7 +101,7 @@ impl WakewordNN {
 }
 
 fn calc_inverse_similarity(n1: &f32, n2: &f32) -> f32 {
-    (100. - ((1. - (n1 - n2) / (n1 + n2).abs()) * 100.)).min(100.)
+    ((n1 - n2) / (n1 + n2).abs()).min(1.)
 }
 pub(crate) fn new_model_impl<M: ModelImpl>(
     varmap: &VarMap,

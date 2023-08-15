@@ -374,7 +374,7 @@ impl Rustpotter {
                 ))
             })
             .filter_map(|detection| {
-                if detection.score > self.threshold && detection.avg_score > self.avg_threshold {
+                if detection.score >= self.threshold && detection.avg_score >= self.avg_threshold {
                     Some(detection)
                 } else {
                     None
