@@ -16,7 +16,6 @@ pub struct WAVEncoder {
     input_samples_per_frame: usize,
     output_samples_per_frame: usize,
 }
-
 impl WAVEncoder {
     pub fn get_input_frame_length(&self) -> usize {
         self.input_samples_per_frame
@@ -27,46 +26,32 @@ impl WAVEncoder {
     pub fn get_input_byte_length(&self) -> usize {
         self.get_input_frame_length() * (self.source_bits_per_sample as usize / 8)
     }
-    pub fn encode(&mut self, buffer: &[u8]) -> Vec<f32> {
-        match self.source_sample_format {
-            SampleFormat::Int => self.reencode_int(&encode_int_audio_bytes(
-                buffer,
-                self.source_bits_per_sample,
-                self.source_endianness,
-            )),
-            SampleFormat::Float => self.reencode_float(&encode_float_audio_bytes(
-                buffer,
-                self.source_bits_per_sample,
-                self.source_endianness,
-            )),
-        }
+    pub fn encode_and_resample(&mut self, buffer: &[u8]) -> Vec<f32> {
+        let float_samples = if self.source_sample_format == SampleFormat::Int {
+            match self.source_bits_per_sample {
+                8 => encode_audio_bytes::<i8>(buffer, self.source_endianness),
+                16 => encode_audio_bytes::<i16>(buffer, self.source_endianness),
+                32 => encode_audio_bytes::<i32>(buffer, self.source_endianness),
+                _ => Vec::new(),
+            }
+        } else {
+            encode_audio_bytes::<f32>(buffer, self.source_endianness)
+        };
+        self.reencode_to_mono_with_sample_rate(float_samples)
     }
-    pub fn reencode_int(&mut self, buffer: &[i32]) -> Vec<f32> {
+    pub fn rencode_and_resample<T: SampleType>(&mut self, buffer: Vec<T>) -> Vec<f32> {
         self.reencode_to_mono_with_sample_rate(
-            &buffer
-                .iter()
-                .map(|s| {
-                    match self.source_bits_per_sample {
-                        8 => *s as f32 / i8::MAX as f32,
-                        16 => *s as f32 / i16::MAX as f32,
-                        _ => *s as f32 / i32::MAX as f32,
-                    }
-                    .clamp(-1., 1.)
-                })
-                .collect::<Vec<f32>>(),
+            buffer.into_iter().map(T::into_f32).collect::<Vec<f32>>(),
         )
     }
-    pub fn reencode_float(&mut self, audio_chunk: &[f32]) -> Vec<f32> {
-        self.reencode_to_mono_with_sample_rate(audio_chunk)
-    }
-    fn reencode_to_mono_with_sample_rate(&mut self, buffer: &[f32]) -> Vec<f32> {
+    fn reencode_to_mono_with_sample_rate(&mut self, buffer: Vec<f32>) -> Vec<f32> {
         let mono_buffer = if self.source_channels != 1 {
             buffer
                 .chunks_exact(self.source_channels as usize)
                 .map(|chunk| chunk[0])
                 .collect::<Vec<f32>>()
         } else {
-            buffer.to_vec()
+            buffer
         };
         if self.resampler.is_none() {
             mono_buffer
@@ -138,70 +123,95 @@ impl WAVEncoder {
         }
     }
 }
-fn encode_int_audio_bytes(
-    audio_buffer: &[u8],
-    bits_per_sample: u16,
-    endianness: Endianness,
-) -> Vec<i32> {
-    let buffer_chunks = audio_buffer.chunks_exact((bits_per_sample / 8) as usize);
-    match endianness {
-        Endianness::Little => buffer_chunks
-            .map(|bytes| match bits_per_sample {
-                8 => i8::from_le_bytes([bytes[0]]) as i32,
-                16 => i16::from_le_bytes([bytes[0], bytes[1]]) as i32,
-                24 => i32::from_le_bytes([0, bytes[0], bytes[1], bytes[2]]),
-                32 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                _default => 0,
-            })
-            .collect::<Vec<i32>>(),
-        Endianness::Big => buffer_chunks
-            .map(|bytes| match bits_per_sample {
-                8 => i8::from_be_bytes([bytes[0]]) as i32,
-                16 => i16::from_be_bytes([bytes[0], bytes[1]]) as i32,
-                24 => i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]),
-                32 => i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                _default => 0,
-            })
-            .collect::<Vec<i32>>(),
-        Endianness::Native => buffer_chunks
-            .map(|bytes| match bits_per_sample {
-                8 => i8::from_ne_bytes([bytes[0]]) as i32,
-                16 => i16::from_ne_bytes([bytes[0], bytes[1]]) as i32,
-                24 => i32::from_ne_bytes([0, bytes[0], bytes[1], bytes[2]]),
-                32 => i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                _default => 0,
-            })
-            .collect::<Vec<i32>>(),
-    }
+
+pub trait SampleType:
+    Sized + Copy + std::cmp::PartialOrd + std::fmt::Display + 'static + Send
+{
+    fn get_byte_size() -> usize;
+    fn get_zero() -> Self;
+    fn from_le_bytes(bytes: &[u8]) -> Self;
+    fn from_be_bytes(bytes: &[u8]) -> Self;
+    fn from_ne_bytes(bytes: &[u8]) -> Self;
+    fn into_f32(self) -> f32;
 }
 
-fn encode_float_audio_bytes(
-    audio_buffer: &[u8],
-    bits_per_sample: u16,
-    endianness: Endianness,
-) -> Vec<f32> {
-    let buffer_chunks = audio_buffer.chunks_exact((bits_per_sample / 8) as usize);
-    let audio_chunk: Vec<f32> = match endianness {
-        Endianness::Little => buffer_chunks
-            .map(|bytes| match bits_per_sample {
-                32 => f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                _default => 0.,
-            })
-            .collect::<Vec<f32>>(),
-        Endianness::Big => buffer_chunks
-            .map(|bytes| match bits_per_sample {
-                32 => f32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                _default => 0.,
-            })
-            .collect::<Vec<f32>>(),
-        Endianness::Native => buffer_chunks
-            .map(|bytes| match bits_per_sample {
-                32 => f32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                _default => 0.,
-            })
-            .collect::<Vec<f32>>(),
+macro_rules! with_sample_type {
+    ($ty:ty, $byte_size:literal, $to_f32:expr, $from_le_bytes:expr, $from_be_bytes:expr, $from_ne_bytes:expr, $zero:literal) => {
+        impl SampleType for $ty {
+            fn get_byte_size() -> usize {
+                $byte_size
+            }
+            fn get_zero() -> Self {
+                $zero
+            }
+            fn into_f32(self) -> f32 {
+                $to_f32(self)
+            }
+            fn from_le_bytes(bytes: &[u8]) -> Self {
+                $from_le_bytes(bytes)
+            }
+            fn from_be_bytes(bytes: &[u8]) -> Self {
+                $from_be_bytes(bytes)
+            }
+            fn from_ne_bytes(bytes: &[u8]) -> Self {
+                $from_ne_bytes(bytes)
+            }
+        }
     };
-    audio_chunk
+}
+with_sample_type!(
+    i8,
+    1,
+    |v: i8| v as f32 / (i8::MAX as f32),
+    |bytes: &[u8]| i8::from_le_bytes([bytes[0]]),
+    |bytes: &[u8]| i8::from_be_bytes([bytes[0]]),
+    |bytes: &[u8]| i8::from_ne_bytes([bytes[0]]),
+    0
+);
+with_sample_type!(
+    i16,
+    2,
+    |v: i16| v as f32 / (i16::MAX as f32),
+    |bytes: &[u8]| i16::from_le_bytes([bytes[0], bytes[1]]),
+    |bytes: &[u8]| i16::from_be_bytes([bytes[0], bytes[1]]),
+    |bytes: &[u8]| i16::from_ne_bytes([bytes[0], bytes[1]]),
+    0
+);
+with_sample_type!(
+    i32,
+    4,
+    |v: i32| v as f32 / (i32::MAX as f32),
+    |bytes: &[u8]| i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+    |bytes: &[u8]| i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+    |bytes: &[u8]| i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+    0
+);
+with_sample_type!(
+    f32,
+    4,
+    |v: f32| v,
+    |bytes: &[u8]| f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+    |bytes: &[u8]| f32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+    |bytes: &[u8]| f32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+    0.
+);
+
+fn encode_audio_bytes<T: SampleType>(audio_buffer: &[u8], endianness: Endianness) -> Vec<f32> {
+    let buffer_chunks = audio_buffer.chunks_exact(T::get_byte_size());
+    match endianness {
+        Endianness::Little => buffer_chunks
+            .map(T::from_le_bytes)
+            .collect::<Vec<T>>(),
+        Endianness::Big => buffer_chunks
+            .map(T::from_be_bytes)
+            .collect::<Vec<T>>(),
+        Endianness::Native => buffer_chunks
+            .map(T::from_ne_bytes)
+            .collect::<Vec<T>>(),
+    }
+    .into_iter()
+    .map(T::into_f32)
+    .collect()
 }
 
 #[test]
@@ -265,7 +275,7 @@ fn reencode_wav_with_different_format() {
     assert_eq!(input_length, 480, "input size is correct");
     assert_eq!(output_length, 480, "output size is correct");
     let samples = wav_reader
-        .into_samples::<i32>()
+        .into_samples::<i16>()
         .map(|chunk| *chunk.as_ref().unwrap())
         .collect::<Vec<_>>();
     let internal_spec = hound::WavSpec {
@@ -281,7 +291,7 @@ fn reencode_wav_with_different_format() {
     .unwrap();
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_int(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<i16>(chuck.to_vec()))
         .for_each(|reencoded_chunk| {
             for sample in reencoded_chunk {
                 writer.write_sample(sample).ok();

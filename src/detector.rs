@@ -9,7 +9,8 @@ use crate::{
     },
     mfcc::{MfccComparator, MfccExtractor},
     wakewords::WakewordDetector,
-    DeserializableWakeword, RustpotterConfig, ScoreMode, WakewordRef, WakewordModel,
+    DeserializableWakeword, RustpotterConfig, ScoreMode, WakewordModel, WakewordRef,
+    SampleType,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```
@@ -25,7 +26,7 @@ use crate::{
 /// let mut sample_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
 /// // while true { Iterate forever
 ///     // fill the buffer with the required samples/bytes...
-///    let detection = rustpotter.process_i16(&sample_buffer);
+///    let detection = rustpotter.process_samples(sample_buffer);
 ///     if let Some(detection) = detection {
 ///         println!("{:?}", detection);
 ///     }
@@ -172,8 +173,7 @@ impl Rustpotter {
         }
         self.max_mfcc_frames = max_feature_frames;
         if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
-            gain_normalizer_filter
-                .set_rms_level_ref(target_rms_level, self.max_mfcc_frames / 3);
+            gain_normalizer_filter.set_rms_level_ref(target_rms_level, self.max_mfcc_frames / 3);
         }
         self.buffering = self.audio_mfcc_window.len() < self.max_mfcc_frames;
     }
@@ -231,46 +231,19 @@ impl Rustpotter {
     /// Assumes buffer endianness matches the configured for the detector.
     ///
     pub fn process_bytes(&mut self, audio_bytes: &[u8]) -> Option<RustpotterDetection> {
-        let encoded_samples = self.wav_encoder.encode(audio_bytes);
+        let encoded_samples = self.wav_encoder.encode_and_resample(audio_bytes);
         self.process_audio(encoded_samples)
     }
-    /// Process i16 audio chunks.
+    /// Process encoded audio samples.
     ///
     /// Number of samples provided should match the return of the get_samples_per_frame method.
     ///
-    /// Only use if you have configured bits_per_sample to one of: 8, 16.
-    ///
-    /// Only use if you have configured sample_format to 'int'.
-    pub fn process_i16(&mut self, audio_samples: &[i16]) -> Option<RustpotterDetection> {
-        self.process_i32(
-            audio_samples
-                .iter()
-                .map(|sample| *sample as i32)
-                .collect::<Vec<i32>>()
-                .as_slice(),
-        )
-    }
-    /// Process i32 audio chunks.
-    ///
-    /// Number of samples provided should match the return of the get_samples_per_frame method.
-    ///
-    /// Only use if you have configured bits_per_sample to one of: 8, 16, 24, 32.
-    ///
-    /// Only use if you have configured sample_format to 'int'.
-    pub fn process_i32(&mut self, audio_samples: &[i32]) -> Option<RustpotterDetection> {
-        let reencoded_samples = self.wav_encoder.reencode_int(audio_samples);
-        self.process_audio(reencoded_samples)
-    }
-    /// Process f32 audio chunks.
-    ///
-    /// Number of samples provided should match the return of the get_samples_per_frame method.
-    ///
-    /// Only use if you have configured bits_per_sample to 32.
-    ///
-    /// Only use if you have configured sample_format to 'float'.
-    pub fn process_f32(&mut self, audio_samples: &[f32]) -> Option<RustpotterDetection> {
-        let reencoded_samples = self.wav_encoder.reencode_float(audio_samples);
-        self.process_audio(reencoded_samples)
+    pub fn process_samples<T: SampleType>(
+        &mut self,
+        audio_samples: Vec<T>,
+    ) -> Option<RustpotterDetection> {
+        let float_samples = self.wav_encoder.rencode_and_resample::<T>(audio_samples);
+        self.process_audio(float_samples)
     }
     fn process_audio(&mut self, mut audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
         self.rms_level = GainNormalizerFilter::get_rms_level(&audio_buffer);

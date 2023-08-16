@@ -105,7 +105,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_audio_filter() {
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 0.2, 5.);
     assert_eq!(detected_wakewords.len(), 2);
     assert_eq!(detected_wakewords[0].score, 0.7304294);
-    assert_eq!(detected_wakewords[1].score, 0.71067846);
+    assert_eq!(detected_wakewords[1].score, 0.71067876);
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn it_can_detect_wakewords_while_applying_gain_normalizer_and_band_pass_audio_fi
         run_detection_simulation_with_gains(config, "/tests/resources/oye_casa_g.rpw", 0.2, 5.);
     assert_eq!(detected_wakewords.len(), 2);
     assert_eq!(detected_wakewords[0].score, 0.5775406);
-    assert_eq!(detected_wakewords[1].score, 0.5828695);
+    assert_eq!(detected_wakewords[1].score, 0.5828697);
 }
 
 #[test]
@@ -169,14 +169,14 @@ fn it_can_detect_wakewords_on_record_with_noise_using_filters() {
         "/tests/resources/real_sample.wav",
     );
     assert_eq!(detected_wakewords.len(), 3);
-    assert_eq!(detected_wakewords[0].avg_score, 0.45487034);
-    assert_eq!(detected_wakewords[0].score, 0.5380105);
+    assert_eq!(detected_wakewords[0].avg_score, 0.45496628);
+    assert_eq!(detected_wakewords[0].score, 0.5380342);
     assert_eq!(detected_wakewords[0].counter, 23);
-    assert_eq!(detected_wakewords[1].avg_score, 0.33616057);
-    assert_eq!(detected_wakewords[1].score, 0.50012267);
+    assert_eq!(detected_wakewords[1].avg_score, 0.336222);
+    assert_eq!(detected_wakewords[1].score, 0.5001262);
     assert_eq!(detected_wakewords[1].counter, 5);
-    assert_eq!(detected_wakewords[2].avg_score, 0.30491996);
-    assert_eq!(detected_wakewords[2].score, 0.5188978);
+    assert_eq!(detected_wakewords[2].avg_score, 0.3049497);
+    assert_eq!(detected_wakewords[2].score, 0.5189481);
     assert_eq!(detected_wakewords[2].counter, 31);
 }
 
@@ -221,7 +221,7 @@ fn run_detection_with_audio_file(
     audio_samples.append(&mut silence);
     let detected_wakewords = audio_samples
         .chunks_exact(rustpotter.get_samples_per_frame())
-        .filter_map(|audio_buffer| rustpotter.process_f32(audio_buffer))
+        .filter_map(|audio_buffer| rustpotter.process_samples(audio_buffer.into()))
         .map(|detection| {
             print_detection(&detection);
             detection

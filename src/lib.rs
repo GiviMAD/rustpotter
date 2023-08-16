@@ -12,6 +12,7 @@ pub use audio::BandPassFilter;
 pub use audio::GainNormalizerFilter;
 #[cfg(feature = "audio")]
 pub use audio::WAVEncoder;
+pub use audio::SampleType;
 pub use comp::{WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles};
 pub use config::BandPassConfig;
 pub use config::DetectorConfig;

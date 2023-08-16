@@ -101,7 +101,7 @@ fn filter_audio() {
     );
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
         .map(|mut chunk| {
             filter.filter(&mut chunk);
             chunk
@@ -165,7 +165,7 @@ fn filter_gain_normalized_audio() {
     );
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
         .map(|mut chunk| {
             let rms_level = crate::audio::GainNormalizerFilter::get_rms_level(&chunk);
             gain_filter.filter(&mut chunk, rms_level);

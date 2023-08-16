@@ -47,12 +47,12 @@ impl MfccWavFileExtractor {
         let mut rms_levels: Vec<f32> = Vec::new();
         let encoded_samples = if wav_reader.spec().sample_format == SampleFormat::Int {
             let samples = wav_reader
-                .into_samples::<i32>()
+                .into_samples::<i16>()
                 .map(|chunk| *chunk.as_ref().unwrap())
                 .collect::<Vec<_>>();
             samples
                 .chunks_exact(encoder.get_input_frame_length())
-                .map(|buffer| encoder.reencode_int(buffer))
+                .map(|chuck| encoder.rencode_and_resample::<i16>(chuck.into()))
                 .map(|encoded_buffer| {
                     rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
                     encoded_buffer
@@ -68,7 +68,7 @@ impl MfccWavFileExtractor {
                 .collect::<Vec<_>>();
             samples
                 .chunks_exact(encoder.get_input_frame_length())
-                .map(|buffer| encoder.reencode_float(buffer))
+                .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
                 .map(|encoded_buffer| {
                     rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
                     encoded_buffer

@@ -110,7 +110,7 @@ fn filter_audio() {
     let mut filter = GainNormalizerFilter::new(0.1, 1., Some(0.003));
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
         .map(|mut chunk| {
             let rms_level = GainNormalizerFilter::get_rms_level(&chunk);
             filter.filter(&mut chunk, rms_level);
