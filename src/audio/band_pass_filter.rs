@@ -67,7 +67,7 @@ fn filter_audio() {
     println!("{:?}", wav_spec);
     let mut encoder = crate::audio::WAVEncoder::new(
         &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
@@ -130,7 +130,7 @@ fn filter_gain_normalized_audio() {
     println!("{:?}", wav_spec);
     let mut encoder = crate::audio::WAVEncoder::new(
         &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();

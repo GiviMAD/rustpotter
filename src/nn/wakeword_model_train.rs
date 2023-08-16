@@ -1,7 +1,10 @@
-use super::wakeword_nn::{flat_features, get_tensors_data, new_model_impl, Mlp, ModelImpl};
+use super::wakeword_nn::{
+    flat_features, get_tensors_data, init_model_impl, LargeModel, MediumModel, ModelImpl,
+    SmallModel,
+};
 use crate::{
-    constants::FEATURE_EXTRACTOR_NUM_FEATURES, mfcc::MfccWavFileExtractor,
-    wakewords::ModelWeights, WakewordModel,
+    constants::MFCCS_EXTRACTOR_OUT_BANDS, mfcc::MfccWavFileExtractor, wakewords::ModelWeights,
+    WakewordModel, WakewordModelType,
 };
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
@@ -13,6 +16,7 @@ use std::{
 
 pub trait WakewordModelTrain {
     fn train_from_sample_buffers(
+        m_type: WakewordModelType,
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
         learning_rate: f64,
@@ -31,19 +35,25 @@ pub trait WakewordModelTrain {
                 "No test data provided",
             ));
         }
+        // prepare data
         let mut labels: Vec<String> = wakeword_model
             .as_ref()
             .map(|m| m.labels.clone())
             .unwrap_or_else(Vec::new);
-        let mut ref_rms_level: f32 = f32::NAN;
+        let m_type = wakeword_model
+            .as_ref()
+            .map(|m| m.m_type.clone())
+            .unwrap_or(m_type);
+        let mut rms_level: f32 = f32::NAN;
         let mut labeled_features =
-            get_features_labeled(&samples, &mut labels, &mut ref_rms_level, true)?;
+            get_features_labeled(&samples, &mut labels, &mut rms_level, true)?;
         let mut noop_rms_level: f32 = f32::NAN;
         let mut test_labeled_features =
             get_features_labeled(&test_samples, &mut labels, &mut noop_rms_level, false)?;
         println!("Train samples {}.", labeled_features.len());
         println!("Test samples {}.", test_labeled_features.len());
         println!("Labels: {:?}.", labels);
+        println!("Model type: {}.", m_type.as_str());
         // validate labels
         if labels.len() < 2 {
             return Err(std::io::Error::new(
@@ -51,22 +61,21 @@ pub trait WakewordModelTrain {
                 "Your training data need to contain at least two labels",
             ));
         }
+        // use previous training size or get it from the training samples
         let input_len = wakeword_model
             .as_ref()
-            .map(|m| m.train_size * FEATURE_EXTRACTOR_NUM_FEATURES) // force same length
+            .map(|m| m.train_size * MFCCS_EXTRACTOR_OUT_BANDS)
             .unwrap_or_else(|| labeled_features.iter().map(|f| f.0.len()).max().unwrap());
         println!(
             "Training on frames of {}ms",
-            (input_len / FEATURE_EXTRACTOR_NUM_FEATURES) * 10
+            (input_len / MFCCS_EXTRACTOR_OUT_BANDS as usize) * 10
         );
         // pad or truncate data
         labeled_features
             .iter_mut()
+            .chain(test_labeled_features.iter_mut())
             .for_each(|i| i.0.resize(input_len, 0.));
-        // pad or truncate test data
-        test_labeled_features
-            .iter_mut()
-            .for_each(|i| i.0.resize(input_len, 0.));
+        // run training loop
         let dataset = WakewordDataset {
             features: input_len,
             labels: labels.len(),
@@ -79,16 +88,31 @@ pub trait WakewordModelTrain {
             learning_rate,
             epochs,
         };
-        let var_tensors =
-            training_loop::<Mlp>(dataset, &training_args, wakeword_model).map_err(convert_error)?;
+        let weights = match m_type {
+            WakewordModelType::SMALL => {
+                training_loop::<SmallModel>(dataset, &training_args, wakeword_model)
+                    .map_err(convert_error)?
+            }
+            WakewordModelType::MEDIUM => {
+                training_loop::<MediumModel>(dataset, &training_args, wakeword_model)
+                    .map_err(convert_error)?
+            }
+            WakewordModelType::LARGE => {
+                training_loop::<LargeModel>(dataset, &training_args, wakeword_model)
+                .map_err(convert_error)?
+            }
+        };
+        // return serializable model struct
         Ok(WakewordModel {
             labels,
-            train_size: input_len / FEATURE_EXTRACTOR_NUM_FEATURES,
-            model_weights: var_tensors,
-            rms_level: ref_rms_level,
+            m_type,
+            train_size: input_len / MFCCS_EXTRACTOR_OUT_BANDS as usize,
+            weights,
+            rms_level,
         })
     }
     fn train_from_sample_dirs(
+        m_type: WakewordModelType,
         train_dir: String,
         test_dir: String,
         learning_rate: f64,
@@ -96,6 +120,7 @@ pub trait WakewordModelTrain {
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
         Self::train_from_sample_buffers(
+            m_type,
             get_files_data_map(train_dir)?,
             get_files_data_map(test_dir)?,
             learning_rate,
@@ -105,7 +130,7 @@ pub trait WakewordModelTrain {
     }
 }
 
-fn training_loop<M: ModelImpl>(
+fn training_loop<M: ModelImpl + 'static>(
     m: WakewordDataset,
     args: &TrainingArgs,
     wakeword: Option<WakewordModel>,
@@ -115,10 +140,10 @@ fn training_loop<M: ModelImpl>(
     let train_features = m.train_features.to_device(&dev)?;
     let train_labels = train_labels.to_dtype(DType::U32)?.to_device(&dev)?;
 
-    let varmap = VarMap::new();
+    let var_map = VarMap::new();
     let from_wakeword = wakeword.is_some();
-    let model = new_model_impl::<Mlp>(&varmap, &dev, m.features, m.labels, wakeword.as_ref())?;
-    let sgd = candle_nn::SGD::new(varmap.all_vars(), args.learning_rate);
+    let model = init_model_impl::<M>(&var_map, &dev, m.features, m.labels, wakeword.as_ref())?;
+    let sgd = candle_nn::SGD::new(var_map.all_vars(), args.learning_rate);
     let test_features = m.test_features.to_device(&dev)?;
     let test_labels = m.test_labels.to_dtype(DType::U32)?.to_device(&dev)?;
     if from_wakeword {
@@ -139,10 +164,7 @@ fn training_loop<M: ModelImpl>(
             epoch,
         )?;
     }
-    let var_tensors = get_tensors_data(varmap);
-    //let tensor = ;
-    // VarBuilder::from_tensors(ts, dtype, device);
-    Ok(var_tensors)
+    Ok(get_tensors_data(var_map))
 }
 
 struct WakewordDataset {
@@ -172,8 +194,8 @@ fn get_files_data_map(train_dir: String) -> Result<HashMap<String, Vec<u8>>, Err
     Ok(files_map)
 }
 
-fn test_model<M: ModelImpl, S: candle_core::WithDType>(
-    model: &M,
+fn test_model<S: candle_core::WithDType>(
+    model: &Box<dyn ModelImpl>,
     test_features: &Tensor,
     test_labels: &Tensor,
     loss: S,

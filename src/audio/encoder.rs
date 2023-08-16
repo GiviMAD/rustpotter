@@ -232,7 +232,7 @@ fn it_returns_correct_samples_per_frame() {
     };
     let encoder = WAVEncoder::new(
         &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
@@ -262,7 +262,7 @@ fn reencode_wav_with_different_format() {
     println!("{:?}", wav_spec);
     let mut encoder = WAVEncoder::new(
         &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();

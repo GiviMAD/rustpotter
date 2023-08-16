@@ -185,7 +185,7 @@ fn it_can_detect_wakewords_using_trained_model() {
     let config = RustpotterConfig::default();
     let detected_wakewords = run_detection_with_audio_file(
         config,
-        "/tests/resources/trained.rpw",
+        "/tests/resources/trained-small.rpw",
         "/tests/resources/ok_casa.wav",
     );
     assert_eq!(detected_wakewords.len(), 1);

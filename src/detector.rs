@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::{
     audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder},
     constants::{
-        DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-        FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
-        FEATURE_EXTRACTOR_PRE_EMPHASIS,
+        DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
+        MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+        MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
     mfcc::{MfccComparator, MfccExtractor},
     wakewords::WakewordDetector,
@@ -81,23 +81,22 @@ impl Rustpotter {
     pub fn new(config: &RustpotterConfig) -> Result<Rustpotter, String> {
         let reencoder = WAVEncoder::new(
             &config.fmt,
-            FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+            MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
             DETECTOR_INTERNAL_SAMPLE_RATE,
         )?;
         let samples_per_frame = reencoder.get_output_frame_length();
         let samples_per_shift = (samples_per_frame as f32
-            / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32))
+            / (MFCCS_EXTRACTOR_FRAME_LENGTH_MS as f32 / MFCCS_EXTRACTOR_FRAME_SHIFT_MS as f32))
             as usize;
         let feature_extractor = MfccExtractor::new(
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
-            FEATURE_EXTRACTOR_NUM_COEFFICIENT,
-            FEATURE_EXTRACTOR_PRE_EMPHASIS,
+            MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+            MFCCS_EXTRACTOR_PRE_EMPHASIS,
         );
         let mfcc_comparator = MfccComparator::new(
-            config.detector.comparator_band_size,
-            config.detector.comparator_ref,
+            config.detector.score_ref,
         );
         let band_pass_filter = if config.filters.band_pass.enabled {
             Some(BandPassFilter::new(
@@ -146,7 +145,8 @@ impl Rustpotter {
     }
     /// Add wakeword model to the detector.
     pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) {
-        self.wakewords.push(Box::new(wakeword.get_nn()));
+        let score_ref = self.mfcc_comparator.get_score_ref();
+        self.wakewords.push(Box::new(wakeword.get_nn(score_ref)));
         self.on_wakeword_change();
     }
     /// Remove wakeword by name or label.

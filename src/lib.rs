@@ -10,9 +10,9 @@ mod wakewords;
 pub use audio::BandPassFilter;
 #[cfg(feature = "audio")]
 pub use audio::GainNormalizerFilter;
+pub use audio::SampleType;
 #[cfg(feature = "audio")]
 pub use audio::WAVEncoder;
-pub use audio::SampleType;
 pub use comp::{WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles};
 pub use config::BandPassConfig;
 pub use config::DetectorConfig;
@@ -26,10 +26,11 @@ pub use config::WavFmt;
 #[cfg(feature = "audio")]
 pub use constants::DETECTOR_INTERNAL_SAMPLE_RATE;
 #[cfg(feature = "audio")]
-pub use constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS;
+pub use constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS;
 pub use detector::Rustpotter;
 pub use detector::RustpotterDetection;
 pub use nn::WakewordModelTrain;
 pub use wakewords::{
-    DeserializableWakeword, ModelWeights, SerializableWakeword, TensorData, WakewordRef, WakewordModel,
+    DeserializableWakeword, ModelWeights, SerializableWakeword, TensorData, WakewordModel,
+    WakewordModelType, WakewordRef,
 };

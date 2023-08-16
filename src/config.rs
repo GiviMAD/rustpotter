@@ -1,7 +1,7 @@
 use crate::constants::{
     DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
-    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-    FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+    DETECTOR_INTERNAL_SAMPLE_RATE,
+    MFCCS_COMPARATOR_DEFAULT_REFERENCE,
 };
 
 /// Indicates the byte endianness
@@ -118,10 +118,8 @@ pub struct DetectorConfig {
     pub min_scores: usize,
     /// How to calculate a unified score.
     pub score_mode: ScoreMode,
-    /// Feature comparator band size.
-    pub comparator_band_size: u16,
-    /// Feature comparator reference. (Used to express the similarity as a percent)
-    pub comparator_ref: f32,
+    /// Value used to express the score as a percent in range 0 - 1.
+    pub score_ref: f32,
 }
 impl Default for DetectorConfig {
     fn default() -> DetectorConfig {
@@ -130,8 +128,7 @@ impl Default for DetectorConfig {
             threshold: DETECTOR_DEFAULT_THRESHOLD,
             min_scores: DETECTOR_DEFAULT_MIN_SCORES,
             score_mode: ScoreMode::Max,
-            comparator_band_size: FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-            comparator_ref: FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+            score_ref: MFCCS_COMPARATOR_DEFAULT_REFERENCE,
         }
     }
 }

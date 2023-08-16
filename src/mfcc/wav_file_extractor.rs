@@ -5,9 +5,9 @@ use hound::WavReader;
 use crate::{
     audio::{GainNormalizerFilter, WAVEncoder},
     constants::{
-        DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
-        FEATURE_EXTRACTOR_FRAME_SHIFT_MS, FEATURE_EXTRACTOR_NUM_COEFFICIENT,
-        FEATURE_EXTRACTOR_PRE_EMPHASIS,
+        DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
+        MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+        MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
     Endianness, SampleFormat, WavFmt,
 };
@@ -30,19 +30,19 @@ impl MfccWavFileExtractor {
         };
         let mut encoder = WAVEncoder::new(
             &fmt,
-            FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+            MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
             DETECTOR_INTERNAL_SAMPLE_RATE,
         )?;
         let samples_per_frame = encoder.get_output_frame_length();
         let samples_per_shift = (samples_per_frame as f32
-            / (FEATURE_EXTRACTOR_FRAME_LENGTH_MS as f32 / FEATURE_EXTRACTOR_FRAME_SHIFT_MS as f32))
+            / (MFCCS_EXTRACTOR_FRAME_LENGTH_MS as f32 / MFCCS_EXTRACTOR_FRAME_SHIFT_MS as f32))
             as usize;
         let mut feature_extractor = MfccExtractor::new(
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
-            FEATURE_EXTRACTOR_NUM_COEFFICIENT,
-            FEATURE_EXTRACTOR_PRE_EMPHASIS,
+            MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+            MFCCS_EXTRACTOR_PRE_EMPHASIS,
         );
         let mut rms_levels: Vec<f32> = Vec::new();
         let encoded_samples = if wav_reader.spec().sample_format == SampleFormat::Int {

@@ -1,8 +1,8 @@
 use crate::{
-    constants::{FEATURE_EXTRACTOR_NUM_FEATURES, NN_NONE_LABEL},
+    constants::{MFCCS_EXTRACTOR_OUT_BANDS, NN_NONE_LABEL, MFCCS_EXTRACTOR_OUT_SHIFTS},
     wakewords::WakewordDetector,
     wakewords::{ModelWeights, TensorData},
-    RustpotterDetection, WakewordModel,
+    RustpotterDetection, WakewordModel, WakewordModelType,
 };
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{Linear, VarBuilder, VarMap};
@@ -10,19 +10,22 @@ use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 pub(crate) struct WakewordNN {
     _vars: VarMap,
-    model: Mlp,
+    model: Box<dyn ModelImpl>,
     features_size: usize,
     labels: Vec<String>,
+    score_ref: f32,
     rms_level: f32,
 }
 
 impl WakewordNN {
-    pub fn new(wakeword_model: &WakewordModel) -> Self {
+    pub fn new(wakeword_model: &WakewordModel, score_ref: f32) -> Self {
         let vars = VarMap::new();
-        let model = new_model_impl::<Mlp>(
+        let m_type = wakeword_model.m_type.clone();
+        let model = init_model(
+            m_type,
             &vars,
             &Device::Cpu,
-            wakeword_model.train_size * FEATURE_EXTRACTOR_NUM_FEATURES,
+            wakeword_model.train_size * MFCCS_EXTRACTOR_OUT_BANDS,
             wakeword_model.labels.len(),
             Some(wakeword_model),
         )
@@ -30,6 +33,7 @@ impl WakewordNN {
         WakewordNN {
             _vars: vars,
             model,
+            score_ref,
             rms_level: wakeword_model.rms_level,
             labels: wakeword_model.labels.clone(),
             features_size: wakeword_model.train_size,
@@ -66,8 +70,8 @@ impl WakewordNN {
                 .unwrap_or(&0.);
             Some(RustpotterDetection {
                 name: label.to_string(),
-                avg_score: calc_inverse_similarity(label_prob, second_prob),
-                score: calc_inverse_similarity(label_prob, none_prob),
+                avg_score: calc_inverse_similarity(label_prob, second_prob, &self.score_ref),
+                score: calc_inverse_similarity(label_prob, none_prob, &self.score_ref),
                 scores,
                 counter: usize::MIN, // added by the detector
                 gain: f32::NAN,      // added by the detector
@@ -130,22 +134,45 @@ impl WakewordDetector for WakewordNN {
     }
 }
 
-fn calc_inverse_similarity(n1: &f32, n2: &f32) -> f32 {
-    ((n1 - n2) / (n1 + n2).abs()).min(1.)
+fn calc_inverse_similarity(n1: &f32, n2: &f32, reference: &f32) -> f32 {
+    let reference = reference * 10.;
+    1. - (1. / (1. + (((n1 - n2) - reference) / reference).exp()))
 }
-pub(crate) fn new_model_impl<M: ModelImpl>(
+
+pub(crate) fn init_model(
+    m_type: WakewordModelType,
     varmap: &VarMap,
     dev: &Device,
     features_size: usize,
     labels_size: usize,
     wakeword: Option<&WakewordModel>,
-) -> Result<M, candle_core::Error> {
+) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
+    match m_type {
+        WakewordModelType::SMALL => {
+            init_model_impl::<SmallModel>(varmap, dev, features_size, labels_size, wakeword)
+        }
+        WakewordModelType::MEDIUM => {
+            init_model_impl::<MediumModel>(varmap, dev, features_size, labels_size, wakeword)
+        }
+        WakewordModelType::LARGE => {
+            init_model_impl::<LargeModel>(varmap, dev, features_size, labels_size, wakeword)
+        }
+    }
+}
+
+pub(super) fn init_model_impl<M: ModelImpl + 'static>(
+    varmap: &VarMap,
+    dev: &Device,
+    features_size: usize,
+    labels_size: usize,
+    wakeword: Option<&WakewordModel>,
+) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
     let vs = VarBuilder::from_varmap(varmap, DType::F32, dev);
     let model = M::new(vs.clone(), features_size, labels_size)?;
     if let Some(wakeword) = wakeword {
-        load_varmap(varmap, &wakeword.model_weights)?;
+        load_varmap(varmap, &wakeword.weights)?;
     }
-    Ok(model)
+    Ok(Box::new(model))
 }
 pub(crate) fn get_tensors_data(varmap: VarMap) -> ModelWeights {
     let mut model_weights: HashMap<String, TensorData> = HashMap::new();
@@ -189,43 +216,35 @@ impl Into<Tensor> for &TensorData {
     }
 }
 
-pub(crate) fn flat_features(features: Vec<Vec<f32>>) -> Vec<f32> {
+pub(super) fn flat_features(features: Vec<Vec<f32>>) -> Vec<f32> {
     features
         .into_iter()
         .flat_map(|array| array.into_iter())
         .collect()
 }
-pub(crate) struct Mlp {
+pub(super) struct LargeModel {
+    ln1: Linear,
+    ln2: Linear,
+    ln3: Linear,
+}
+pub(super) struct MediumModel {
     ln1: Linear,
     ln2: Linear,
 }
-struct LinearModel {
-    linear: Linear,
+pub(super) struct SmallModel {
+    ln1: Linear,
+    ln2: Linear,
 }
-fn linear_z(in_dim: usize, out_dim: usize, vs: VarBuilder) -> candle_core::Result<Linear> {
-    let ws = vs.get_or_init((out_dim, in_dim), "weight", candle_nn::init::ZERO)?;
-    let bs = vs.get_or_init(out_dim, "bias", candle_nn::init::ZERO)?;
-    Ok(Linear::new(ws, Some(bs)))
-}
-pub(crate) trait ModelImpl: Sized {
-    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self>;
+pub(crate) trait ModelImpl: Send {
+    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self>
+    where
+        Self: Sized;
     fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor>;
 }
 
-impl ModelImpl for LinearModel {
+impl ModelImpl for SmallModel {
     fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
-        let linear = linear_z(input_size, labels_size, vs)?;
-        Ok(Self { linear })
-    }
-
-    fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
-        self.linear.forward(xs)
-    }
-}
-
-impl ModelImpl for Mlp {
-    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
-        let inter_size = input_size / 3;
+        let inter_size = input_size / MFCCS_EXTRACTOR_OUT_SHIFTS.pow(2);
         let ln1 = candle_nn::linear(input_size, inter_size, vs.pp("ln1"))?;
         let ln2 = candle_nn::linear(inter_size, labels_size, vs.pp("ln2"))?;
         Ok(Self { ln1, ln2 })
@@ -235,5 +254,38 @@ impl ModelImpl for Mlp {
         let xs = self.ln1.forward(xs)?;
         let xs = xs.relu()?;
         self.ln2.forward(&xs)
+    }
+}
+
+impl ModelImpl for MediumModel {
+    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
+        let inter_size = input_size / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
+        let ln1 = candle_nn::linear(input_size, inter_size, vs.pp("ln1"))?;
+        let ln2 = candle_nn::linear(inter_size, labels_size, vs.pp("ln2"))?;
+        Ok(Self { ln1, ln2 })
+    }
+
+    fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
+        let xs = self.ln1.forward(xs)?;
+        let xs = xs.relu()?;
+        self.ln2.forward(&xs)
+    }
+}
+
+impl ModelImpl for LargeModel {
+    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
+        let inter_size1 = input_size / MFCCS_EXTRACTOR_OUT_SHIFTS;
+        let ln1 = candle_nn::linear(input_size, inter_size1, vs.pp("ln1"))?;
+        let inter_size2 = input_size / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
+        let ln2: Linear = candle_nn::linear(inter_size1, inter_size2, vs.pp("ln2"))?;
+        let ln3: Linear = candle_nn::linear(inter_size2, labels_size, vs.pp("ln3"))?;
+        Ok(Self { ln1, ln2, ln3 })
+    }
+
+    fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
+        let xs = self.ln1.forward(xs)?;
+        let xs = xs.relu()?;
+        let xs = self.ln2.forward(&xs)?;
+        self.ln3.forward(&xs)
     }
 }
