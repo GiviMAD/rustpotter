@@ -1,7 +1,7 @@
+use super::comp::WakewordComparator;
 use crate::{
-    comp::WakewordComparator,
     mfcc::MfccComparator,
-    wakewords::{DeserializableWakeword, SerializableWakeword},
+    wakewords::{WakewordSave, WakewordLoad},
     ScoreMode, WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles,
 };
 use serde::{Deserialize, Serialize};
@@ -18,8 +18,8 @@ pub struct WakewordRef {
     pub rms_level: f32,
     pub enabled: bool,
 }
-impl SerializableWakeword for WakewordRef {}
-impl DeserializableWakeword for WakewordRef {}
+impl WakewordLoad for WakewordRef {}
+impl WakewordSave for WakewordRef {}
 impl WakewordRefBuildFromBuffers for WakewordRef {}
 impl WakewordRefBuildFromFiles for WakewordRef {}
 impl WakewordRef {

@@ -2,7 +2,7 @@ use crate::{
     constants::{MFCCS_EXTRACTOR_OUT_BANDS, NN_NONE_LABEL, MFCCS_EXTRACTOR_OUT_SHIFTS},
     wakewords::WakewordDetector,
     wakewords::{ModelWeights, TensorData},
-    RustpotterDetection, WakewordModel, WakewordModelType,
+    RustpotterDetection, WakewordModel, ModelType,
 };
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{Linear, VarBuilder, VarMap};
@@ -140,7 +140,7 @@ fn calc_inverse_similarity(n1: &f32, n2: &f32, reference: &f32) -> f32 {
 }
 
 pub(crate) fn init_model(
-    m_type: WakewordModelType,
+    m_type: ModelType,
     varmap: &VarMap,
     dev: &Device,
     features_size: usize,
@@ -148,13 +148,13 @@ pub(crate) fn init_model(
     wakeword: Option<&WakewordModel>,
 ) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
     match m_type {
-        WakewordModelType::SMALL => {
+        ModelType::SMALL => {
             init_model_impl::<SmallModel>(varmap, dev, features_size, labels_size, wakeword)
         }
-        WakewordModelType::MEDIUM => {
+        ModelType::MEDIUM => {
             init_model_impl::<MediumModel>(varmap, dev, features_size, labels_size, wakeword)
         }
-        WakewordModelType::LARGE => {
+        ModelType::LARGE => {
             init_model_impl::<LargeModel>(varmap, dev, features_size, labels_size, wakeword)
         }
     }

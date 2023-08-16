@@ -1,5 +1,5 @@
 use rustpotter::{
-    DeserializableWakeword, SerializableWakeword, WakewordModelTrain, WakewordRef, WakewordModel, WakewordRefBuildFromFiles, WakewordModelType
+    WakewordSave, WakewordLoad, WakewordModelTrain, WakewordRef, WakewordModel, WakewordRefBuildFromFiles, ModelType
 };
 
 #[test]
@@ -88,7 +88,7 @@ fn it_train_a_new_wakeword_from_samples() {
     let train_dir = dir.to_owned() + "/tests/resources/train";
     let test_dir = dir.to_owned() + "/tests/resources/test";
     let ww_model =
-        WakewordModel::train_from_sample_dirs(WakewordModelType::MEDIUM, train_dir, test_dir, 0.12, 10, None).unwrap();
+        WakewordModel::train_from_sample_dirs(ModelType::MEDIUM, train_dir, test_dir, 0.12, 10, None).unwrap();
     assert_eq!(ww_model.labels.len(), 2, "Sample features are extracted");
     assert_eq!(ww_model.weights.len(), 4, "Model weights are created");
     assert_eq!(

@@ -4,7 +4,7 @@ use super::wakeword_nn::{
 };
 use crate::{
     constants::MFCCS_EXTRACTOR_OUT_BANDS, mfcc::MfccWavFileExtractor, wakewords::ModelWeights,
-    WakewordModel, WakewordModelType,
+    WakewordModel, ModelType,
 };
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
@@ -16,7 +16,7 @@ use std::{
 
 pub trait WakewordModelTrain {
     fn train_from_sample_buffers(
-        m_type: WakewordModelType,
+        m_type: ModelType,
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
         learning_rate: f64,
@@ -89,15 +89,15 @@ pub trait WakewordModelTrain {
             epochs,
         };
         let weights = match m_type {
-            WakewordModelType::SMALL => {
+            ModelType::SMALL => {
                 training_loop::<SmallModel>(dataset, &training_args, wakeword_model)
                     .map_err(convert_error)?
             }
-            WakewordModelType::MEDIUM => {
+            ModelType::MEDIUM => {
                 training_loop::<MediumModel>(dataset, &training_args, wakeword_model)
                     .map_err(convert_error)?
             }
-            WakewordModelType::LARGE => {
+            ModelType::LARGE => {
                 training_loop::<LargeModel>(dataset, &training_args, wakeword_model)
                 .map_err(convert_error)?
             }
@@ -112,7 +112,7 @@ pub trait WakewordModelTrain {
         })
     }
     fn train_from_sample_dirs(
-        m_type: WakewordModelType,
+        m_type: ModelType,
         train_dir: String,
         test_dir: String,
         learning_rate: f64,

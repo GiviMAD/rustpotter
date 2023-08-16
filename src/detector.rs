@@ -9,7 +9,7 @@ use crate::{
     },
     mfcc::{MfccComparator, MfccExtractor},
     wakewords::WakewordDetector,
-    DeserializableWakeword, RustpotterConfig, ScoreMode, WakewordModel, WakewordRef,
+    WakewordLoad, RustpotterConfig, ScoreMode, WakewordModel, WakewordRef,
     SampleType,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust

@@ -3,7 +3,7 @@ use std::{fs::File, io::BufReader};
 use ciborium::{de, ser};
 use serde::{de::DeserializeOwned, Serialize};
 
-pub trait SerializableWakeword: Serialize {
+pub trait WakewordSave: Serialize {
     fn save_to_file(&self, path: &str) -> Result<(), String> {
         let mut file = match File::create(path) {
             Ok(it) => it,
@@ -20,7 +20,7 @@ pub trait SerializableWakeword: Serialize {
         Ok(bytes)
     }
 }
-pub trait DeserializableWakeword: DeserializeOwned + Sized {
+pub trait WakewordLoad: DeserializeOwned + Sized {
     fn load_from_file(path: &str) -> Result<Self, String> {
         let file = match File::open(path) {
             Ok(it) => it,
