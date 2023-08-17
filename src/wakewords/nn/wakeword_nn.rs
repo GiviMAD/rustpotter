@@ -283,9 +283,8 @@ impl ModelImpl for LargeModel {
     }
 
     fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
-        let xs = self.ln1.forward(xs)?;
-        let xs = xs.relu()?;
-        let xs = self.ln2.forward(&xs)?;
+        let xs = self.ln1.forward(xs)?.relu()?;
+        let xs = self.ln2.forward(&xs)?.relu()?;
         self.ln3.forward(&xs)
     }
 }
