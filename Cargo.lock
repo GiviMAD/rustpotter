@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "rustpotter"
-version = "3.0.0-beta1"
+version = "3.0.0-beta.1"
 dependencies = [
  "candle-core",
  "candle-nn",
