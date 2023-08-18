@@ -15,7 +15,7 @@ pub(crate) struct WakewordComparator {
     rms_level: f32,
     // state
     score_mode: ScoreMode,
-    feature_comparator: MfccComparator,
+    mfcc_comparator: MfccComparator,
 }
 
 impl WakewordComparator {
@@ -30,7 +30,7 @@ impl WakewordComparator {
         MfccNormalizer::normalize(features)
     }
     fn score_frame(&self, frame_features: &[Vec<f32>], template: &[Vec<f32>]) -> f32 {
-        let score = self.feature_comparator.compare(
+        let score = self.mfcc_comparator.compare(
             &template.iter().map(|item| &item[..]).collect::<Vec<_>>(),
             &frame_features
                 .iter()
@@ -53,7 +53,7 @@ impl WakewordComparator {
     }
     pub fn new(
         wakeword: &WakewordRef,
-        feature_comparator: MfccComparator,
+        mfcc_comparator: MfccComparator,
         score_mode: ScoreMode,
     ) -> Self {
         WakewordComparator {
@@ -64,7 +64,7 @@ impl WakewordComparator {
             avg_threshold: wakeword.avg_threshold,
             rms_level: wakeword.rms_level,
             score_mode,
-            feature_comparator: feature_comparator,
+            mfcc_comparator,
         }
     }
 }

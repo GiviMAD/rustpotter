@@ -1,7 +1,7 @@
-use super::comp::WakewordComparator;
+use super::{comp::WakewordComparator, WakewordDetector, WakewordFile};
 use crate::{
     mfcc::MfccComparator,
-    wakewords::{WakewordSave, WakewordLoad},
+    wakewords::{WakewordLoad, WakewordSave},
     ScoreMode, WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles,
 };
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,15 @@ impl WakewordLoad for WakewordRef {}
 impl WakewordSave for WakewordRef {}
 impl WakewordRefBuildFromBuffers for WakewordRef {}
 impl WakewordRefBuildFromFiles for WakewordRef {}
+impl WakewordFile for WakewordRef {
+    fn get_detector(&self, score_ref: f32, score_mode: ScoreMode) -> Box<dyn WakewordDetector> {
+        Box::new(WakewordComparator::new(
+            self,
+            MfccComparator::new(score_ref),
+            score_mode,
+        ))
+    }
+}
 impl WakewordRef {
     pub(crate) fn new(
         name: String,
@@ -43,12 +52,5 @@ impl WakewordRef {
             rms_level,
             enabled: true,
         })
-    }
-    pub(crate) fn get_comparator(
-        &self,
-        feature_comparator: MfccComparator,
-        score_mode: ScoreMode,
-    ) -> WakewordComparator {
-        WakewordComparator::new(self, feature_comparator, score_mode)
     }
 }

@@ -26,8 +26,8 @@ impl MfccAverager {
                 .iter()
                 .map(|x| {
                     x.iter()
-                        .map(|feature_group| {
-                            feature_group.to_vec().iter().sum::<f32>() / feature_group.len() as f32
+                        .map(|mfcc_shift| {
+                            mfcc_shift.to_vec().iter().sum::<f32>() / mfcc_shift.len() as f32
                         })
                         .collect::<Vec<f32>>()
                 })

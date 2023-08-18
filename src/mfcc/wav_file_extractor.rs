@@ -1,6 +1,6 @@
 use std::io::BufReader;
 
-use hound::WavReader;
+use hound::{WavReader, WavSpec};
 
 use crate::{
     audio::{GainNormalizerFilter, WAVEncoder},
@@ -9,7 +9,7 @@ use crate::{
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
         MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
-    Endianness, SampleFormat, WavFmt,
+    Endianness, Sample, SampleFormat, WavFmt,
 };
 
 use super::{MfccExtractor, MfccNormalizer};
@@ -21,13 +21,7 @@ impl MfccWavFileExtractor {
         out_rms_level: &mut f32,
     ) -> Result<Vec<Vec<f32>>, String> {
         let wav_reader = WavReader::new(buffer_reader).map_err(|err| err.to_string())?;
-        let fmt = WavFmt {
-            bits_per_sample: wav_reader.spec().bits_per_sample,
-            channels: wav_reader.spec().channels,
-            sample_format: wav_reader.spec().sample_format,
-            sample_rate: wav_reader.spec().sample_rate as usize,
-            endianness: Endianness::Little,
-        };
+        let fmt = wav_reader.spec().try_into()?;
         let mut encoder = WAVEncoder::new(
             &fmt,
             MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
@@ -37,7 +31,7 @@ impl MfccWavFileExtractor {
         let samples_per_shift = (samples_per_frame as f32
             / (MFCCS_EXTRACTOR_FRAME_LENGTH_MS as f32 / MFCCS_EXTRACTOR_FRAME_SHIFT_MS as f32))
             as usize;
-        let mut feature_extractor = MfccExtractor::new(
+        let mut mfcc_extractor = MfccExtractor::new(
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
@@ -45,38 +39,17 @@ impl MfccWavFileExtractor {
             MFCCS_EXTRACTOR_PRE_EMPHASIS,
         );
         let mut rms_levels: Vec<f32> = Vec::new();
-        let encoded_samples = if wav_reader.spec().sample_format == SampleFormat::Int {
-            let samples = wav_reader
-                .into_samples::<i16>()
-                .map(|chunk| *chunk.as_ref().unwrap())
-                .collect::<Vec<_>>();
-            samples
-                .chunks_exact(encoder.get_input_frame_length())
-                .map(|chuck| encoder.rencode_and_resample::<i16>(chuck.into()))
-                .map(|encoded_buffer| {
-                    rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
-                    encoded_buffer
-                })
-                .fold(Vec::new(), |mut acc, mut i| {
-                    acc.append(&mut i);
-                    acc
-                })
-        } else {
-            let samples = wav_reader
-                .into_samples::<f32>()
-                .map(|chunk| *chunk.as_ref().unwrap())
-                .collect::<Vec<_>>();
-            samples
-                .chunks_exact(encoder.get_input_frame_length())
-                .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
-                .map(|encoded_buffer| {
-                    rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
-                    encoded_buffer
-                })
-                .fold(Vec::new(), |mut acc, mut i| {
-                    acc.append(&mut i);
-                    acc
-                })
+        let encoded_samples = match fmt.sample_format {
+            SampleFormat::I8 => encode_samples::<R, i8>(wav_reader, &mut encoder, &mut rms_levels),
+            SampleFormat::I16 => {
+                encode_samples::<R, i16>(wav_reader, &mut encoder, &mut rms_levels)
+            }
+            SampleFormat::I32 => {
+                encode_samples::<R, i32>(wav_reader, &mut encoder, &mut rms_levels)
+            }
+            SampleFormat::F32 => {
+                encode_samples::<R, f32>(wav_reader, &mut encoder, &mut rms_levels)
+            }
         };
         if !rms_levels.is_empty() {
             rms_levels.sort_by(|a, b| a.total_cmp(b));
@@ -86,13 +59,56 @@ impl MfccWavFileExtractor {
         let sample_mfccs = encoded_samples
             .as_slice()
             .chunks_exact(encoder.get_output_frame_length())
-            .map(|samples_chunk| feature_extractor.compute(samples_chunk))
-            .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, feature_matrix| {
-                for features in feature_matrix {
-                    acc.push(features);
-                }
+            .map(|samples_chunk| mfcc_extractor.compute(samples_chunk))
+            .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, mfcc_matrix| {
+                mfcc_matrix
+                    .into_iter()
+                    .for_each(|features| acc.push(features));
                 acc
             });
         Ok(MfccNormalizer::normalize(sample_mfccs))
+    }
+}
+
+fn encode_samples<R: std::io::Read, S: hound::Sample + Sample>(
+    wav_reader: WavReader<BufReader<R>>,
+    encoder: &mut WAVEncoder,
+    rms_levels: &mut Vec<f32>,
+) -> Vec<f32> {
+    let samples = wav_reader
+        .into_samples::<S>()
+        .map(|chunk| chunk.unwrap())
+        .collect::<Vec<_>>();
+    samples
+        .chunks_exact(encoder.get_input_frame_length())
+        .map(|chuck| encoder.rencode_and_resample::<S>(chuck.into()))
+        .map(|encoded_buffer| {
+            rms_levels.push(GainNormalizerFilter::get_rms_level(&encoded_buffer));
+            encoded_buffer
+        })
+        .fold(Vec::new(), |mut acc, mut i| {
+            acc.append(&mut i);
+            acc
+        })
+}
+
+impl TryFrom<WavSpec> for WavFmt {
+    type Error = String;
+
+    fn try_from(spec: WavSpec) -> Result<Self, Self::Error> {
+        let sample_format = match &spec.sample_format {
+            hound::SampleFormat::Int => SampleFormat::int_of_size(spec.bits_per_sample),
+            hound::SampleFormat::Float => SampleFormat::float_of_size(spec.bits_per_sample),
+        };
+        if let Some(sample_format) = sample_format {
+            Ok(WavFmt {
+                channels: spec.channels,
+                sample_format,
+                sample_rate: spec.sample_rate as usize,
+                endianness: Endianness::Little,
+            })
+        } else {
+            Err("Unsupported wav format".to_string())
+        }
     }
 }

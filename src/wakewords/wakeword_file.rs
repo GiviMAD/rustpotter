@@ -3,6 +3,10 @@ use std::{fs::File, io::BufReader};
 use ciborium::{de, ser};
 use serde::{de::DeserializeOwned, Serialize};
 
+use crate::ScoreMode;
+
+use super::WakewordDetector;
+
 pub trait WakewordSave: Serialize {
     fn save_to_file(&self, path: &str) -> Result<(), String> {
         let mut file = match File::create(path) {
@@ -35,4 +39,8 @@ pub trait WakewordLoad: DeserializeOwned + Sized {
         let reader = BufReader::new(buffer);
         Ok(de::from_reader(reader).map_err(|err| err.to_string())?)
     }
+}
+
+pub(crate) trait WakewordFile {
+    fn get_detector(&self, score_ref: f32, score_mode: ScoreMode) -> Box<dyn WakewordDetector>;
 }

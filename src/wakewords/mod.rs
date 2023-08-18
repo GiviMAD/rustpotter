@@ -1,13 +1,14 @@
-mod wakeword_detector;
-mod wakeword_model;
-mod wakeword_ref;
-mod wakeword_serde;
 mod comp;
 mod nn;
+mod wakeword_detector;
+mod wakeword_file;
+mod wakeword_model;
+mod wakeword_ref;
 
-pub(crate) use wakeword_detector::WakewordDetector;
 pub use comp::{WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles};
 pub use nn::WakewordModelTrain;
+pub(crate) use wakeword_detector::WakewordDetector;
+pub(crate) use wakeword_file::WakewordFile;
+pub use wakeword_file::{WakewordLoad, WakewordSave};
+pub use wakeword_model::{ModelType, ModelWeights, TensorData, WakewordModel};
 pub use wakeword_ref::WakewordRef;
-pub use wakeword_model::{ModelWeights, TensorData, WakewordModel, ModelType};
-pub use wakeword_serde::{WakewordSave, WakewordLoad};

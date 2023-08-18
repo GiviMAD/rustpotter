@@ -7,10 +7,9 @@ use crate::{
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
         MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
-    mfcc::{MfccComparator, MfccExtractor},
-    wakewords::WakewordDetector,
-    WakewordLoad, RustpotterConfig, ScoreMode, WakewordModel, WakewordRef,
-    SampleType,
+    mfcc::MfccExtractor,
+    wakewords::{WakewordDetector, WakewordFile},
+    RustpotterConfig, Sample, ScoreMode, WakewordLoad, WakewordModel, WakewordRef,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```
@@ -47,8 +46,8 @@ pub struct Rustpotter {
     wav_encoder: WAVEncoder,
     /// Utility to extract a collection of mfcc for each input audio frame.
     mfcc_extractor: MfccExtractor,
-    /// Utility to measure the similarity between two feature frame vectors.
-    mfcc_comparator: MfccComparator,
+    /// Score ref
+    score_ref: f32,
     /// Optional band-pass filter implementation.
     band_pass_filter: Option<BandPassFilter>,
     /// Optional gain filter implementation.
@@ -88,15 +87,12 @@ impl Rustpotter {
         let samples_per_shift = (samples_per_frame as f32
             / (MFCCS_EXTRACTOR_FRAME_LENGTH_MS as f32 / MFCCS_EXTRACTOR_FRAME_SHIFT_MS as f32))
             as usize;
-        let feature_extractor = MfccExtractor::new(
+        let mfcc_extractor = MfccExtractor::new(
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
             MFCCS_EXTRACTOR_NUM_COEFFICIENT,
             MFCCS_EXTRACTOR_PRE_EMPHASIS,
-        );
-        let mfcc_comparator = MfccComparator::new(
-            config.detector.score_ref,
         );
         let band_pass_filter = if config.filters.band_pass.enabled {
             Some(BandPassFilter::new(
@@ -121,9 +117,9 @@ impl Rustpotter {
             threshold: config.detector.threshold,
             min_scores: config.detector.min_scores,
             score_mode: config.detector.score_mode,
+            score_ref:config.detector.score_ref,
             wav_encoder: reencoder,
-            mfcc_extractor: feature_extractor,
-            mfcc_comparator,
+            mfcc_extractor,
             band_pass_filter,
             gain_normalizer_filter,
             audio_mfcc_window: Vec::new(),
@@ -137,16 +133,14 @@ impl Rustpotter {
         })
     }
     /// Add wakeword to the detector.
-    pub fn add_wakeword(&mut self, wakeword: WakewordRef) {
-        self.wakewords.push(Box::new(
-            wakeword.get_comparator(self.mfcc_comparator.clone(), self.score_mode),
-        ));
+    pub fn add_wakeword_ref(&mut self, wakeword: WakewordRef) {
+        self.wakewords
+            .push(wakeword.get_detector(self.score_ref, self.score_mode));
         self.on_wakeword_change();
     }
     /// Add wakeword model to the detector.
     pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) {
-        let score_ref = self.mfcc_comparator.get_score_ref();
-        self.wakewords.push(Box::new(wakeword.get_nn(score_ref)));
+        self.wakewords.push(wakeword.get_detector(self.score_ref, self.score_mode));
         self.on_wakeword_change();
     }
     /// Remove wakeword by name or label.
@@ -162,16 +156,16 @@ impl Rustpotter {
     }
     /// Update detection window and gain normalizer requirements.
     fn on_wakeword_change(&mut self) {
-        let mut max_feature_frames = usize::MIN;
+        let mut max_mfcc_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
-            max_feature_frames = wakeword
+            max_mfcc_frames = wakeword
                 .as_ref()
                 .get_mfcc_frame_size()
-                .max(max_feature_frames);
+                .max(max_mfcc_frames);
             target_rms_level = wakeword.get_rms_level().max(target_rms_level);
         }
-        self.max_mfcc_frames = max_feature_frames;
+        self.max_mfcc_frames = max_mfcc_frames;
         if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
             gain_normalizer_filter.set_rms_level_ref(target_rms_level, self.max_mfcc_frames / 3);
         }
@@ -180,7 +174,7 @@ impl Rustpotter {
     /// Add wakeword from model bytes.
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
         WakewordRef::load_from_buffer(buffer)
-            .map(|wakeword| self.add_wakeword(wakeword))
+            .map(|wakeword| self.add_wakeword_ref(wakeword))
             .or_else(|_| {
                 WakewordModel::load_from_buffer(buffer)
                     .map(|wakeword| self.add_wakeword_model(wakeword))
@@ -189,7 +183,7 @@ impl Rustpotter {
     /// Add wakeword from model path.
     pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
         WakewordRef::load_from_file(path)
-            .map(|wakeword| self.add_wakeword(wakeword))
+            .map(|wakeword| self.add_wakeword_ref(wakeword))
             .or_else(|_| {
                 WakewordModel::load_from_file(path)
                     .map(|wakeword| self.add_wakeword_model(wakeword))
@@ -238,7 +232,7 @@ impl Rustpotter {
     ///
     /// Number of samples provided should match the return of the get_samples_per_frame method.
     ///
-    pub fn process_samples<T: SampleType>(
+    pub fn process_samples<T: Sample>(
         &mut self,
         audio_samples: Vec<T>,
     ) -> Option<RustpotterDetection> {

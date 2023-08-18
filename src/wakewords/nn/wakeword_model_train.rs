@@ -4,7 +4,7 @@ use super::wakeword_nn::{
 };
 use crate::{
     constants::MFCCS_EXTRACTOR_OUT_BANDS, mfcc::MfccWavFileExtractor, wakewords::ModelWeights,
-    WakewordModel, ModelType,
+    ModelType, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
@@ -45,13 +45,12 @@ pub trait WakewordModelTrain {
             .map(|m| m.m_type.clone())
             .unwrap_or(m_type);
         let mut rms_level: f32 = f32::NAN;
-        let mut labeled_features =
-            get_features_labeled(&samples, &mut labels, &mut rms_level, true)?;
+        let mut labeled_mfccs = get_features_labeled(&samples, &mut labels, &mut rms_level, true)?;
         let mut noop_rms_level: f32 = f32::NAN;
-        let mut test_labeled_features =
+        let mut test_labeled_mfccs =
             get_features_labeled(&test_samples, &mut labels, &mut noop_rms_level, false)?;
-        println!("Train samples {}.", labeled_features.len());
-        println!("Test samples {}.", test_labeled_features.len());
+        println!("Train samples {}.", labeled_mfccs.len());
+        println!("Test samples {}.", test_labeled_mfccs.len());
         println!("Labels: {:?}.", labels);
         println!("Model type: {}.", m_type.as_str());
         // validate labels
@@ -65,24 +64,24 @@ pub trait WakewordModelTrain {
         let input_len = wakeword_model
             .as_ref()
             .map(|m| m.train_size * MFCCS_EXTRACTOR_OUT_BANDS)
-            .unwrap_or_else(|| labeled_features.iter().map(|f| f.0.len()).max().unwrap());
+            .unwrap_or_else(|| labeled_mfccs.iter().map(|f| f.0.len()).max().unwrap());
         println!(
             "Training on frames of {}ms",
             (input_len / MFCCS_EXTRACTOR_OUT_BANDS as usize) * 10
         );
         // pad or truncate data
-        labeled_features
+        labeled_mfccs
             .iter_mut()
-            .chain(test_labeled_features.iter_mut())
+            .chain(test_labeled_mfccs.iter_mut())
             .for_each(|i| i.0.resize(input_len, 0.));
         // run training loop
         let dataset = WakewordDataset {
             features: input_len,
             labels: labels.len(),
-            train_features: get_features_tensor(&labeled_features)?,
-            train_labels: get_labels_tensor(labeled_features)?,
-            test_features: get_features_tensor(&test_labeled_features)?,
-            test_labels: get_labels_tensor(test_labeled_features)?,
+            train_labels: get_labels_tensor_stack(&labeled_mfccs)?,
+            train_features: get_mfccs_tensor_stack(labeled_mfccs)?,
+            test_labels: get_labels_tensor_stack(&test_labeled_mfccs)?,
+            test_features: get_mfccs_tensor_stack(test_labeled_mfccs)?,
         };
         let training_args = TrainingArgs {
             learning_rate,
@@ -99,7 +98,7 @@ pub trait WakewordModelTrain {
             }
             ModelType::LARGE => {
                 training_loop::<LargeModel>(dataset, &training_args, wakeword_model)
-                .map_err(convert_error)?
+                    .map_err(convert_error)?
             }
         };
         // return serializable model struct
@@ -217,17 +216,14 @@ fn test_model<S: candle_core::WithDType>(
     Ok(())
 }
 
-fn get_labels_tensor(labeled_features: Vec<(Vec<f32>, u32)>) -> Result<Tensor, Error> {
+fn get_labels_tensor_stack(labeled_features: &[(Vec<f32>, u32)]) -> Result<Tensor, Error> {
     Tensor::from_iter(labeled_features.iter().map(|lf| lf.1), &Device::Cpu).map_err(convert_error)
 }
 
-fn get_features_tensor(labeled_features: &Vec<(Vec<f32>, u32)>) -> Result<Tensor, Error> {
+fn get_mfccs_tensor_stack(labeled_features: Vec<(Vec<f32>, u32)>) -> Result<Tensor, Error> {
     let tensors_result: Result<Vec<Tensor>, Error> = labeled_features
-        .iter()
-        .map(|lf| {
-            // TODO: no clone
-            Tensor::from_iter(lf.0.iter().cloned(), &Device::Cpu).map_err(convert_error)
-        })
+        .into_iter()
+        .map(|lf| Tensor::from_iter(lf.0.into_iter(), &Device::Cpu).map_err(convert_error))
         .collect();
     Tensor::stack(&tensors_result?, 0).map_err(convert_error)
 }

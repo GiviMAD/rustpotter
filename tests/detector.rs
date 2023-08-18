@@ -202,13 +202,7 @@ fn run_detection_with_audio_file(
     let dir = env!("CARGO_MANIFEST_DIR");
     let audio_file = std::fs::File::open(dir.to_owned() + audio_path).unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(audio_file)).unwrap();
-    let wav_spec = rustpotter::WavFmt {
-        sample_rate: wav_reader.spec().sample_rate as usize,
-        sample_format: wav_reader.spec().sample_format,
-        bits_per_sample: wav_reader.spec().bits_per_sample,
-        channels: wav_reader.spec().channels,
-        endianness: rustpotter::Endianness::Little,
-    };
+    let wav_spec: rustpotter::WavFmt = wav_reader.spec().try_into().unwrap();
     config.fmt = wav_spec;
     let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + model_path;
@@ -246,9 +240,8 @@ fn run_detection_simulation_with_gains(
     let sample_rate = 16000;
     let bits_per_sample = 16;
     config.fmt.sample_rate = sample_rate;
-    config.fmt.bits_per_sample = bits_per_sample;
+    config.fmt.sample_format = SampleFormat::I16;
     config.fmt.channels = 1;
-    config.fmt.sample_format = SampleFormat::Int;
     let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + model_path;
     rustpotter.add_wakeword_from_file(&model_path).unwrap();

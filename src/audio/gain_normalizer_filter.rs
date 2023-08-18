@@ -70,16 +70,8 @@ fn filter_audio() {
     let sample_file =
         std::fs::File::open(dir.to_owned() + "/tests/resources/real_sample.wav").unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(sample_file)).unwrap();
-    let wav_spec = crate::WavFmt {
-        sample_rate: wav_reader.spec().sample_rate as usize,
-        sample_format: wav_reader.spec().sample_format,
-        bits_per_sample: wav_reader.spec().bits_per_sample,
-        channels: wav_reader.spec().channels,
-        endianness: crate::Endianness::Little,
-    };
-    println!("{:?}", wav_spec);
     let mut encoder = crate::audio::WAVEncoder::new(
-        &wav_spec,
+        &wav_reader.spec().try_into().unwrap(),
         crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )

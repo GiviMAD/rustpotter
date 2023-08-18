@@ -1,29 +1,17 @@
-use crate::constants::{
-    DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
-    DETECTOR_INTERNAL_SAMPLE_RATE,
-    MFCCS_COMPARATOR_DEFAULT_REFERENCE,
+use crate::{
+    audio::{Endianness, SampleFormat},
+    constants::{
+        DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
+        DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_COMPARATOR_DEFAULT_REFERENCE,
+    },
 };
-
-/// Indicates the byte endianness
-#[cfg_attr(feature = "debug", derive(Debug))]
-#[derive(Clone, Copy)]
-pub enum Endianness {
-    Big,
-    Little,
-    Native,
-}
-/// Supported sample formats
-pub type SampleFormat = hound::SampleFormat;
-
 /// Wav format representation
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct WavFmt {
     /// Indicates the sample rate of the input audio stream.
     pub sample_rate: usize,
-    /// Indicates the sample format used to encode the input audio stream bytes.
+    /// Indicates the sample type and its bit size. It's only used when the audio is provided as bytes.
     pub sample_format: SampleFormat,
-    /// Indicates the bit depth used to encode the input audio stream bytes.
-    pub bits_per_sample: u16,
     /// Indicates the number of channels of the input audio stream.
     pub channels: u16,
     /// Input the sample endianness used to encode the input audio stream bytes.
@@ -33,8 +21,7 @@ impl Default for WavFmt {
     fn default() -> WavFmt {
         WavFmt {
             sample_rate: DETECTOR_INTERNAL_SAMPLE_RATE,
-            sample_format: hound::SampleFormat::Float,
-            bits_per_sample: 32,
+            sample_format: SampleFormat::F32,
             channels: 1,
             endianness: Endianness::Little,
         }

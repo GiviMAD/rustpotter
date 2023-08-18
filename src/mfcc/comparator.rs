@@ -21,9 +21,6 @@ impl MfccComparator {
         let normalized_cost = cost / (a.len() + b.len()) as f32;
         self.compute_probability(normalized_cost)
     }
-    pub fn get_score_ref(&self) -> f32 {
-        self.score_ref
-    }
     fn compute_probability(&self, cost: f32) -> f32 {
         1. / (1. + ((cost - self.score_ref) / self.score_ref).exp())
     }

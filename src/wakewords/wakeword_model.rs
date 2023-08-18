@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ScoreMode;
+
 use super::nn::{WakewordModelTrain, WakewordNN};
 
-use super::{WakewordSave, WakewordLoad};
+use super::{WakewordSave, WakewordLoad, WakewordFile, WakewordDetector};
 #[derive(Serialize, Deserialize)]
 pub struct WakewordModel {
     pub labels: Vec<String>,
@@ -44,10 +46,9 @@ impl std::str::FromStr for ModelType {
 }
 impl WakewordLoad for WakewordModel {}
 impl WakewordSave for WakewordModel {}
-
-impl WakewordModel {
-    pub(crate) fn get_nn(&self, score_ref: f32) -> WakewordNN {
-        WakewordNN::new(self, score_ref)
+impl WakewordFile for WakewordModel {
+    fn get_detector(&self, score_ref: f32, _: ScoreMode) -> Box<dyn WakewordDetector> {
+        Box::new(WakewordNN::new(self, score_ref))
     }
 }
 
