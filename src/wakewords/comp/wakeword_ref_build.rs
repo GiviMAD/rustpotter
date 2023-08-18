@@ -18,7 +18,7 @@ pub trait WakewordRefBuildFromBuffers {
             let mut sample_rms_level = 0.;
             samples_features.insert(
                 key,
-                MfccWavFileExtractor::compute_features(
+                MfccWavFileExtractor::compute_mfccs(
                     BufReader::new(buffer.as_slice()),
                     &mut sample_rms_level,
                 )?,
@@ -63,7 +63,7 @@ pub trait WakewordRefBuildFromFiles {
             let mut sample_rms_level = 0.;
             samples_features.insert(
                 String::from(path.file_name().unwrap().to_str().unwrap()),
-                MfccWavFileExtractor::compute_features(
+                MfccWavFileExtractor::compute_mfccs(
                     BufReader::new(file),
                     &mut sample_rms_level,
                 )?,

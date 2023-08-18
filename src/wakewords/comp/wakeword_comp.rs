@@ -21,13 +21,13 @@ pub(crate) struct WakewordComparator {
 impl WakewordComparator {
     fn cut_and_normalize_frame(
         &self,
-        mut features: Vec<Vec<f32>>,
+        mut mfccs: Vec<Vec<f32>>,
         max_len: usize,
     ) -> Vec<Vec<f32>> {
-        if features.len() > max_len {
-            features.drain(max_len..features.len());
+        if mfccs.len() > max_len {
+            mfccs.drain(max_len..mfccs.len());
         }
-        MfccNormalizer::normalize(features)
+        MfccNormalizer::normalize(mfccs)
     }
     fn score_frame(&self, frame_features: &[Vec<f32>], template: &[Vec<f32>]) -> f32 {
         let score = self.mfcc_comparator.compare(

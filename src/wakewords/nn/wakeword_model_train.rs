@@ -45,10 +45,10 @@ pub trait WakewordModelTrain {
             .map(|m| m.m_type.clone())
             .unwrap_or(m_type);
         let mut rms_level: f32 = f32::NAN;
-        let mut labeled_mfccs = get_features_labeled(&samples, &mut labels, &mut rms_level, true)?;
+        let mut labeled_mfccs = get_mfccs_labeled(&samples, &mut labels, &mut rms_level, true)?;
         let mut noop_rms_level: f32 = f32::NAN;
         let mut test_labeled_mfccs =
-            get_features_labeled(&test_samples, &mut labels, &mut noop_rms_level, false)?;
+            get_mfccs_labeled(&test_samples, &mut labels, &mut noop_rms_level, false)?;
         println!("Train samples {}.", labeled_mfccs.len());
         println!("Test samples {}.", test_labeled_mfccs.len());
         println!("Labels: {:?}.", labels);
@@ -220,8 +220,8 @@ fn get_labels_tensor_stack(labeled_features: &[(Vec<f32>, u32)]) -> Result<Tenso
     Tensor::from_iter(labeled_features.iter().map(|lf| lf.1), &Device::Cpu).map_err(convert_error)
 }
 
-fn get_mfccs_tensor_stack(labeled_features: Vec<(Vec<f32>, u32)>) -> Result<Tensor, Error> {
-    let tensors_result: Result<Vec<Tensor>, Error> = labeled_features
+fn get_mfccs_tensor_stack(labeled_mfccs: Vec<(Vec<f32>, u32)>) -> Result<Tensor, Error> {
+    let tensors_result: Result<Vec<Tensor>, Error> = labeled_mfccs
         .into_iter()
         .map(|lf| Tensor::from_iter(lf.0.into_iter(), &Device::Cpu).map_err(convert_error))
         .collect();
@@ -230,7 +230,7 @@ fn get_mfccs_tensor_stack(labeled_features: Vec<(Vec<f32>, u32)>) -> Result<Tens
 fn convert_error(err: candle_core::Error) -> Error {
     Error::new(ErrorKind::Other, format!("{}", err))
 }
-fn get_features_labeled(
+fn get_mfccs_labeled(
     samples: &HashMap<String, Vec<u8>>,
     labels: &mut Vec<String>,
     sample_rms_level: &mut f32,
@@ -260,7 +260,7 @@ fn get_features_labeled(
         }
         let label_index = labels.iter().position(|r| r.eq(&label)).unwrap() as u32;
         let mut tmp_sample_rms_level: f32 = 0.;
-        let mfccs = MfccWavFileExtractor::compute_features(
+        let mfccs = MfccWavFileExtractor::compute_mfccs(
             BufReader::new(buffer.as_slice()),
             &mut tmp_sample_rms_level,
         )

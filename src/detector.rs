@@ -33,9 +33,9 @@ use crate::{
 /// ```
 pub struct Rustpotter {
     // Config
-    /// Required score against the averaged features vector. Only for discard frames.
+    /// Required score against the averaged mfccs matrix. Only to discard frames.
     avg_threshold: f32,
-    /// Required score while comparing the wakeword against the audio_features_window.
+    /// Required score while comparing the wakeword against the live stream.
     threshold: f32,
     /// Required number of partial scores (scores over threshold) to consider the detection real.
     min_scores: usize,
@@ -259,9 +259,9 @@ impl Rustpotter {
             .into_iter()
             .find_map(|mfccs| self.process_new_mfccs(mfccs))
     }
-    fn process_new_mfccs(&mut self, features_frame: Vec<f32>) -> Option<RustpotterDetection> {
+    fn process_new_mfccs(&mut self, mfcc_frame: Vec<f32>) -> Option<RustpotterDetection> {
         let mut result: Option<RustpotterDetection> = None;
-        self.audio_mfcc_window.push(features_frame);
+        self.audio_mfcc_window.push(mfcc_frame);
         if self.audio_mfcc_window.len() >= self.max_mfcc_frames {
             if self.buffering {
                 self.buffering = false;

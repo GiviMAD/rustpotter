@@ -16,7 +16,7 @@ use super::{MfccExtractor, MfccNormalizer};
 
 pub(crate) struct MfccWavFileExtractor {}
 impl MfccWavFileExtractor {
-    pub(crate) fn compute_features<R: std::io::Read>(
+    pub(crate) fn compute_mfccs<R: std::io::Read>(
         buffer_reader: BufReader<R>,
         out_rms_level: &mut f32,
     ) -> Result<Vec<Vec<f32>>, String> {
@@ -63,7 +63,7 @@ impl MfccWavFileExtractor {
             .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, mfcc_matrix| {
                 mfcc_matrix
                     .into_iter()
-                    .for_each(|features| acc.push(features));
+                    .for_each(|mfccs| acc.push(mfccs));
                 acc
             });
         Ok(MfccNormalizer::normalize(sample_mfccs))

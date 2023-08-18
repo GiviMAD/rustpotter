@@ -56,18 +56,17 @@ impl MfccExtractor {
         if self.samples.len() >= self.samples_per_frame {
             self.samples.drain(0..new_samples.len());
             self.samples.append(&mut new_samples);
-            let features = self.extract_features(&self.samples[0..self.samples_per_frame]);
-            Some(features)
+            Some(self.extract_mfccs(&self.samples[0..self.samples_per_frame]))
         } else {
             self.samples.append(&mut new_samples);
             None
         }
     }
-    fn extract_features(&self, samples: &[f32]) -> Vec<f32> {
+    fn extract_mfccs(&self, samples: &[f32]) -> Vec<f32> {
         let magnitude_spectrum = self.calculate_magnitude_spectrum(samples);
-        let mut features = self.calculate_mel_frequency_cepstral_coefficients(&magnitude_spectrum);
-        features.drain(0..1);
-        features
+        let mut mfcc_frame = self.calculate_mel_frequency_cepstral_coefficients(&magnitude_spectrum);
+        mfcc_frame.drain(0..1);
+        mfcc_frame
     }
     fn pre_emphasis(&self, audio_buffer: &[f32]) -> Vec<f32> {
         let mut tmp_sample = 0.;
