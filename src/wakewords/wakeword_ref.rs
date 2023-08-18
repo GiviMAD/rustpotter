@@ -23,10 +23,15 @@ impl WakewordSave for WakewordRef {}
 impl WakewordRefBuildFromBuffers for WakewordRef {}
 impl WakewordRefBuildFromFiles for WakewordRef {}
 impl WakewordFile for WakewordRef {
-    fn get_detector(&self, score_ref: f32, score_mode: ScoreMode) -> Box<dyn WakewordDetector> {
+    fn get_detector(
+        &self,
+        score_ref: f32,
+        band_size: u16,
+        score_mode: ScoreMode,
+    ) -> Box<dyn WakewordDetector> {
         Box::new(WakewordComparator::new(
             self,
-            MfccComparator::new(score_ref),
+            MfccComparator::new(score_ref, band_size),
             score_mode,
         ))
     }

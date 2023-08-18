@@ -42,5 +42,10 @@ pub trait WakewordLoad: DeserializeOwned + Sized {
 }
 
 pub(crate) trait WakewordFile {
-    fn get_detector(&self, score_ref: f32, score_mode: ScoreMode) -> Box<dyn WakewordDetector>;
+    fn get_detector(
+        &self,
+        score_ref: f32,
+        band_size: u16,
+        score_mode: ScoreMode,
+    ) -> Box<dyn WakewordDetector>;
 }

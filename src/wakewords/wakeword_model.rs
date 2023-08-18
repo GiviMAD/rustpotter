@@ -47,7 +47,7 @@ impl std::str::FromStr for ModelType {
 impl WakewordLoad for WakewordModel {}
 impl WakewordSave for WakewordModel {}
 impl WakewordFile for WakewordModel {
-    fn get_detector(&self, score_ref: f32, _: ScoreMode) -> Box<dyn WakewordDetector> {
+    fn get_detector(&self, score_ref: f32, _: u16, _: ScoreMode) -> Box<dyn WakewordDetector> {
         Box::new(WakewordNN::new(self, score_ref))
     }
 }

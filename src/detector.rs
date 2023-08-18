@@ -46,8 +46,10 @@ pub struct Rustpotter {
     wav_encoder: WAVEncoder,
     /// Utility to extract a collection of mfcc for each input audio frame.
     mfcc_extractor: MfccExtractor,
-    /// Score ref
+    /// Score reference for it to be expressed in a 0 - 1 range.
     score_ref: f32,
+    /// Comparator band size.
+    band_size: u16,
     /// Optional band-pass filter implementation.
     band_pass_filter: Option<BandPassFilter>,
     /// Optional gain filter implementation.
@@ -117,7 +119,8 @@ impl Rustpotter {
             threshold: config.detector.threshold,
             min_scores: config.detector.min_scores,
             score_mode: config.detector.score_mode,
-            score_ref:config.detector.score_ref,
+            score_ref: config.detector.score_ref,
+            band_size: config.detector.band_size,
             wav_encoder: reencoder,
             mfcc_extractor,
             band_pass_filter,
@@ -134,13 +137,15 @@ impl Rustpotter {
     }
     /// Add wakeword to the detector.
     pub fn add_wakeword_ref(&mut self, wakeword: WakewordRef) {
-        self.wakewords
-            .push(wakeword.get_detector(self.score_ref, self.score_mode));
-        self.on_wakeword_change();
+        self.add_wakeword(wakeword)
     }
     /// Add wakeword model to the detector.
     pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) {
-        self.wakewords.push(wakeword.get_detector(self.score_ref, self.score_mode));
+        self.add_wakeword(wakeword)
+    }
+    fn add_wakeword<T: WakewordFile>(&mut self, wakeword: T) {
+        self.wakewords
+            .push(wakeword.get_detector(self.score_ref, self.band_size, self.score_mode));
         self.on_wakeword_change();
     }
     /// Remove wakeword by name or label.
@@ -159,10 +164,7 @@ impl Rustpotter {
         let mut max_mfcc_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
         for wakeword in self.wakewords.iter() {
-            max_mfcc_frames = wakeword
-                .as_ref()
-                .get_mfcc_frame_size()
-                .max(max_mfcc_frames);
+            max_mfcc_frames = wakeword.as_ref().get_mfcc_frame_size().max(max_mfcc_frames);
             target_rms_level = wakeword.get_rms_level().max(target_rms_level);
         }
         self.max_mfcc_frames = max_mfcc_frames;

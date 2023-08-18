@@ -1,15 +1,15 @@
-use crate::constants::MFCCS_EXTRACTOR_OUT_BANDS;
-
 use super::Dtw;
 use std::cmp;
 
 pub struct MfccComparator {
     score_ref: f32,
+    band_size: u16,
 }
 impl MfccComparator {
-    pub fn new(score_ref: f32) -> Self {
+    pub fn new(score_ref: f32, band_size: u16) -> Self {
         MfccComparator {
             score_ref,
+            band_size,
         }
     }
     pub fn calculate_distance(ax: &[f32], bx: &[f32]) -> f32 {
@@ -17,17 +17,12 @@ impl MfccComparator {
     }
     pub fn compare(&self, a: &[&[f32]], b: &[&[f32]]) -> f32 {
         let mut dtw = Dtw::new(MfccComparator::calculate_distance);
-        let cost = dtw.compute_optimal_path_with_window(a, b, MFCCS_EXTRACTOR_OUT_BANDS as u16);
+        let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size as u16);
         let normalized_cost = cost / (a.len() + b.len()) as f32;
         self.compute_probability(normalized_cost)
     }
     fn compute_probability(&self, cost: f32) -> f32 {
         1. / (1. + ((cost - self.score_ref) / self.score_ref).exp())
-    }
-}
-impl Clone for MfccComparator {
-    fn clone(&self) -> Self {
-       Self::new(self.score_ref)
     }
 }
 pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {

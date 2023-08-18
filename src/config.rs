@@ -2,7 +2,7 @@ use crate::{
     audio::{Endianness, SampleFormat},
     constants::{
         DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
-        DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_COMPARATOR_DEFAULT_REFERENCE,
+        DETECTOR_INTERNAL_SAMPLE_RATE, DETECTOR_DEFAULT_REFERENCE, COMPARATOR_DEFAULT_BAND_SIZE,
     },
 };
 /// Wav format representation
@@ -103,10 +103,12 @@ pub struct DetectorConfig {
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
-    /// How to calculate a unified score.
-    pub score_mode: ScoreMode,
     /// Value used to express the score as a percent in range 0 - 1.
     pub score_ref: f32,
+    /// Comparator band size. Doesn't apply to wakeword models.
+    pub band_size: u16,
+    /// How to calculate a unified score. Doesn't apply to wakeword models.
+    pub score_mode: ScoreMode,
 }
 impl Default for DetectorConfig {
     fn default() -> DetectorConfig {
@@ -115,7 +117,8 @@ impl Default for DetectorConfig {
             threshold: DETECTOR_DEFAULT_THRESHOLD,
             min_scores: DETECTOR_DEFAULT_MIN_SCORES,
             score_mode: ScoreMode::Max,
-            score_ref: MFCCS_COMPARATOR_DEFAULT_REFERENCE,
+            score_ref: DETECTOR_DEFAULT_REFERENCE,
+            band_size: COMPARATOR_DEFAULT_BAND_SIZE,
         }
     }
 }
