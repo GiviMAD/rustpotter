@@ -2,16 +2,16 @@ use crate::{
     constants::{MFCCS_EXTRACTOR_OUT_BANDS, NN_NONE_LABEL, MFCCS_EXTRACTOR_OUT_SHIFTS},
     wakewords::WakewordDetector,
     wakewords::{ModelWeights, TensorData},
-    RustpotterDetection, WakewordModel, ModelType,
+    RustpotterDetection, WakewordModel, ModelType, mfcc::MfccNormalizer,
 };
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{Linear, VarBuilder, VarMap};
 use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 pub(crate) struct WakewordNN {
-    _vars: VarMap,
+    _var_map: VarMap,
     model: Box<dyn ModelImpl>,
-    features_size: usize,
+    mfcc_frames: usize,
     labels: Vec<String>,
     score_ref: f32,
     rms_level: f32,
@@ -19,11 +19,11 @@ pub(crate) struct WakewordNN {
 
 impl WakewordNN {
     pub fn new(wakeword_model: &WakewordModel, score_ref: f32) -> Self {
-        let vars = VarMap::new();
+        let var_map = VarMap::new();
         let m_type = wakeword_model.m_type.clone();
         let model = init_model(
             m_type,
-            &vars,
+            &var_map,
             &Device::Cpu,
             wakeword_model.train_size * MFCCS_EXTRACTOR_OUT_BANDS,
             wakeword_model.labels.len(),
@@ -31,12 +31,12 @@ impl WakewordNN {
         )
         .unwrap();
         WakewordNN {
-            _vars: vars,
+            _var_map: var_map,
             model,
             score_ref,
             rms_level: wakeword_model.rms_level,
             labels: wakeword_model.labels.clone(),
-            features_size: wakeword_model.train_size,
+            mfcc_frames: wakeword_model.train_size,
         }
     }
 
@@ -113,16 +113,16 @@ impl WakewordNN {
 }
 impl WakewordDetector for WakewordNN {
     fn get_mfcc_frame_size(&self) -> usize {
-        self.features_size
+        self.mfcc_frames
     }
     fn run_detection(
         &self,
-        mut mfcc_frame: Vec<Vec<f32>>,
+        mut mfcc_frames: Vec<Vec<f32>>,
         avg_threshold: f32,
         threshold: f32,
     ) -> Option<RustpotterDetection> {
-        mfcc_frame.truncate(self.features_size);
-        self.predict_labels(mfcc_frame)
+        mfcc_frames.truncate(self.mfcc_frames);
+        self.predict_labels(MfccNormalizer::normalize(mfcc_frames))
             .and_then(|prob_vec| self.handle_probabilities(prob_vec))
             .and_then(|detection| self.validate_scores(detection, threshold, avg_threshold))
     }
@@ -141,7 +141,7 @@ fn calc_inverse_similarity(n1: &f32, n2: &f32, reference: &f32) -> f32 {
 
 pub(crate) fn init_model(
     m_type: ModelType,
-    varmap: &VarMap,
+    var_map: &VarMap,
     dev: &Device,
     features_size: usize,
     labels_size: usize,
@@ -149,34 +149,34 @@ pub(crate) fn init_model(
 ) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
     match m_type {
         ModelType::SMALL => {
-            init_model_impl::<SmallModel>(varmap, dev, features_size, labels_size, wakeword)
+            init_model_impl::<SmallModel>(var_map, dev, features_size, labels_size, wakeword)
         }
         ModelType::MEDIUM => {
-            init_model_impl::<MediumModel>(varmap, dev, features_size, labels_size, wakeword)
+            init_model_impl::<MediumModel>(var_map, dev, features_size, labels_size, wakeword)
         }
         ModelType::LARGE => {
-            init_model_impl::<LargeModel>(varmap, dev, features_size, labels_size, wakeword)
+            init_model_impl::<LargeModel>(var_map, dev, features_size, labels_size, wakeword)
         }
     }
 }
 
 pub(super) fn init_model_impl<M: ModelImpl + 'static>(
-    varmap: &VarMap,
+    var_map: &VarMap,
     dev: &Device,
     features_size: usize,
     labels_size: usize,
     wakeword: Option<&WakewordModel>,
 ) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
-    let vs = VarBuilder::from_varmap(varmap, DType::F32, dev);
+    let vs = VarBuilder::from_varmap(var_map, DType::F32, dev);
     let model = M::new(vs.clone(), features_size, labels_size)?;
     if let Some(wakeword) = wakeword {
-        load_varmap(varmap, &wakeword.weights)?;
+        load_weights(var_map, &wakeword.weights)?;
     }
     Ok(Box::new(model))
 }
-pub(crate) fn get_tensors_data(varmap: VarMap) -> ModelWeights {
+pub(crate) fn get_tensors_data(var_map: VarMap) -> ModelWeights {
     let mut model_weights: HashMap<String, TensorData> = HashMap::new();
-    for (name, tensor) in varmap.data().lock().unwrap().iter() {
+    for (name, tensor) in var_map.data().lock().unwrap().iter() {
         model_weights.insert(name.to_string(), tensor.into());
     }
     model_weights
@@ -194,14 +194,14 @@ impl From<&Var> for TensorData {
         }
     }
 }
-fn load_varmap(
-    varmap: &VarMap,
+fn load_weights(
+    var_map: &VarMap,
     model_weights: &HashMap<String, TensorData>,
 ) -> Result<(), candle_core::Error> {
-    for (name, var) in varmap.data().lock().unwrap().iter_mut() {
+    for (name, var) in var_map.data().lock().unwrap().iter_mut() {
         match model_weights.get(name) {
             Some(data) => {
-                var.set(&data.into()).expect("Error loading model varmap");
+                var.set(&data.into()).expect("Error loading model weights");
             }
             None => panic!("Incorrect model layers"),
         };
