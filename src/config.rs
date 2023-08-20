@@ -109,6 +109,9 @@ pub struct DetectorConfig {
     pub band_size: u16,
     /// How to calculate a unified score. Doesn't apply to wakeword models.
     pub score_mode: ScoreMode,
+    #[cfg(feature = "record")]
+    /// Path to create record on spot 
+    pub record_path: Option<String>,
 }
 impl Default for DetectorConfig {
     fn default() -> DetectorConfig {
@@ -119,6 +122,8 @@ impl Default for DetectorConfig {
             score_mode: ScoreMode::Max,
             score_ref: DETECTOR_DEFAULT_REFERENCE,
             band_size: COMPARATOR_DEFAULT_BAND_SIZE,
+            #[cfg(feature = "record")]
+            record_path: None,
         }
     }
 }
