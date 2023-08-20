@@ -369,7 +369,7 @@ impl Rustpotter {
             return;
         }
         let file_path = record_folder
-            .join("[" + detection.to_string() + "]" + timestamp.to_string().as_str() + ".wav");
+            .join("[".to_string() + detection + "]" + timestamp.to_string().as_str() + ".wav");
         let mut writer = hound::WavWriter::create(file_path.as_os_str(), spec).unwrap();
         self.audio_window
             .iter()
