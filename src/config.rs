@@ -110,7 +110,7 @@ pub struct DetectorConfig {
     /// How to calculate a unified score. Doesn't apply to wakeword models.
     pub score_mode: ScoreMode,
     #[cfg(feature = "record")]
-    /// Path to create record on spot 
+    /// Path to create records, one on the first partial detection and another each one that scores better.
     pub record_path: Option<String>,
 }
 impl Default for DetectorConfig {
