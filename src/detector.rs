@@ -370,10 +370,12 @@ impl Rustpotter {
         }
         let file_path = record_folder
             .join("[".to_string() + detection + "]" + timestamp.to_string().as_str() + ".wav");
-        let mut writer = hound::WavWriter::create(file_path.as_os_str(), spec).unwrap();
-        self.audio_window
-            .iter()
-            .for_each(|sample| writer.write_sample(*sample).ok().unwrap_or(()))
+        let mut writer = hound::WavWriter::create(file_path.as_os_str(), spec);
+        if let Ok(writer) = writer {
+            self.audio_window
+                .iter()
+                .for_each(|sample| writer.write_sample(*sample).ok().unwrap_or(()));
+        }
     }
 }
 /// Encapsulates the detection information.
