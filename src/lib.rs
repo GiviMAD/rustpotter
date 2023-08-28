@@ -9,7 +9,7 @@ pub use audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder};
 pub use audio::{Endianness, Sample, SampleFormat};
 pub use config::{
     BandPassConfig, DetectorConfig, FiltersConfig, GainNormalizationConfig, RustpotterConfig,
-    ScoreMode, WavFmt,
+    ScoreMode, VADMode, WavFmt,
 };
 #[cfg(feature = "audio")]
 pub use constants::{DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS};

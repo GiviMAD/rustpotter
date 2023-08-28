@@ -53,6 +53,24 @@ fn it_can_detect_wakewords_with_average_score_mode() {
     assert_eq!(detected_wakewords[1].score, 0.6313083);
 }
 
+
+#[test]
+fn it_can_detect_wakewords_with_vad_mode() {
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.2;
+    config.detector.threshold = 0.5;
+    config.filters.gain_normalizer.enabled = false;
+    config.filters.band_pass.enabled = false;
+    config.detector.score_mode = ScoreMode::Max;
+    config.detector.vad_mode = Some(rustpotter::VADMode::EASY);
+    let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
+    assert_eq!(detected_wakewords.len(), 2);
+    assert_eq!(detected_wakewords[0].avg_score, 0.6495044);
+    assert_eq!(detected_wakewords[0].score, 0.7310586);
+    assert_eq!(detected_wakewords[1].avg_score, 0.5804737);
+    assert_eq!(detected_wakewords[1].score, 0.721843);
+}
+
 #[test]
 fn it_can_ignore_words() {
     let mut config = RustpotterConfig::default();

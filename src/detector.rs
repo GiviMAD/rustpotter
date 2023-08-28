@@ -7,7 +7,7 @@ use crate::{
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
         MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
-    mfcc::MfccExtractor,
+    mfcc::{MfccExtractor, VadDetector},
     wakewords::{WakewordDetector, WakewordFile},
     RustpotterConfig, Sample, ScoreMode, WakewordLoad, WakewordModel, WakewordRef,
 };
@@ -41,6 +41,8 @@ pub struct Rustpotter {
     min_scores: usize,
     /// How to calculate the final score.
     score_mode: ScoreMode,
+    ///
+    vad_detector: Option<VadDetector>,
     // Utils
     /// Utility to encode or re-encode the input wav data.
     wav_encoder: WAVEncoder,
@@ -131,6 +133,7 @@ impl Rustpotter {
             score_ref: config.detector.score_ref,
             band_size: config.detector.band_size,
             wav_encoder: reencoder,
+            vad_detector: config.detector.vad_mode.map(|m| VadDetector::new(m)),
             mfcc_extractor,
             band_pass_filter,
             gain_normalizer_filter,
@@ -292,12 +295,19 @@ impl Rustpotter {
     }
     fn process_new_mfccs(&mut self, mfcc_frame: Vec<f32>) -> Option<RustpotterDetection> {
         let mut result: Option<RustpotterDetection> = None;
+        let should_run = self.partial_detection.is_some()
+            || self
+                .vad_detector
+                .as_mut()
+                .map_or(true, |v| v.is_voice(&mfcc_frame));
         self.audio_mfcc_window.push(mfcc_frame);
         if self.audio_mfcc_window.len() >= self.max_mfcc_frames {
             if self.buffering {
                 self.buffering = false;
             }
-            result = self.run_detection();
+            if should_run {
+                result = self.run_detection();
+            }
         }
         if self.audio_mfcc_window.len() >= self.max_mfcc_frames {
             self.audio_mfcc_window.drain(0..1);
@@ -314,6 +324,9 @@ impl Rustpotter {
                 self.buffering = true;
                 self.audio_mfcc_window.clear();
                 self.mfcc_extractor.reset();
+                if let Some(vad) = self.vad_detector.as_mut() {
+                    vad.reset();
+                }
                 return Some(wakeword_detection);
             }
         }
@@ -346,7 +359,7 @@ impl Rustpotter {
             .iter()
             .filter_map(|wakeword| {
                 wakeword.run_detection(
-                    self.audio_mfcc_window.to_vec(),
+                    self.audio_mfcc_window.clone(),
                     self.avg_threshold,
                     self.threshold,
                 )
@@ -370,8 +383,8 @@ impl Rustpotter {
         }
         let file_path = record_folder
             .join("[".to_string() + detection + "]" + timestamp.to_string().as_str() + ".wav");
-        let mut writer = hound::WavWriter::create(file_path.as_os_str(), spec);
-        if let Ok(writer) = writer {
+        let writer = hound::WavWriter::create(file_path.as_os_str(), spec);
+        if let Ok(mut writer) = writer {
             self.audio_window
                 .iter()
                 .for_each(|sample| writer.write_sample(*sample).ok().unwrap_or(()));

@@ -94,6 +94,24 @@ pub enum ScoreMode {
     P90,
     P95,
 }
+/// Configures VAD detector sensibility.
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy)]
+pub enum VADMode {
+    EASY,
+    MEDIUM,
+    HARD,
+}
+
+impl VADMode {
+    pub(crate) fn get_value(&self) -> f32 {
+        match &self {
+            VADMode::EASY => 25.,
+            VADMode::MEDIUM => 50.,
+            VADMode::HARD => 75.,
+        }
+    }
+}
 /// Configures the detector scoring behavior.
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct DetectorConfig {
@@ -109,6 +127,8 @@ pub struct DetectorConfig {
     pub band_size: u16,
     /// How to calculate a unified score. Doesn't apply to wakeword models.
     pub score_mode: ScoreMode,
+    /// How to calculate a unified score. Doesn't apply to wakeword models.
+    pub vad_mode: Option<VADMode>,
     #[cfg(feature = "record")]
     /// Path to create records, one on the first partial detection and another each one that scores better.
     pub record_path: Option<String>,
@@ -122,6 +142,7 @@ impl Default for DetectorConfig {
             score_mode: ScoreMode::Max,
             score_ref: DETECTOR_DEFAULT_REFERENCE,
             band_size: COMPARATOR_DEFAULT_BAND_SIZE,
+            vad_mode: None,
             #[cfg(feature = "record")]
             record_path: None,
         }
