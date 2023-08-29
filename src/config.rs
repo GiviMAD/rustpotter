@@ -98,17 +98,17 @@ pub enum ScoreMode {
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy)]
 pub enum VADMode {
-    EASY,
-    MEDIUM,
-    HARD,
+    Easy,
+    Medium,
+    Hard,
 }
 
 impl VADMode {
     pub(crate) fn get_value(&self) -> f32 {
         match &self {
-            VADMode::EASY => 25.,
-            VADMode::MEDIUM => 50.,
-            VADMode::HARD => 75.,
+            VADMode::Easy => 7.5,
+            VADMode::Medium => 10.,
+            VADMode::Hard => 12.5,
         }
     }
 }

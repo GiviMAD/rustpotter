@@ -3,7 +3,7 @@ use std::{
     io::{BufReader, Read},
 };
 
-use rustpotter::{Rustpotter, RustpotterConfig, SampleFormat, ScoreMode};
+use rustpotter::{Rustpotter, RustpotterConfig, SampleFormat, ScoreMode, VADMode};
 
 
 #[test]
@@ -79,7 +79,7 @@ fn it_can_detect_wakewords_with_vad_mode() {
     config.filters.gain_normalizer.enabled = false;
     config.filters.band_pass.enabled = false;
     config.detector.score_mode = ScoreMode::Max;
-    config.detector.vad_mode = Some(rustpotter::VADMode::EASY);
+    config.detector.vad_mode = Some(VADMode::Easy);
     let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g.rpw");
     assert_eq!(detected_wakewords.len(), 2);
     assert_eq!(detected_wakewords[0].avg_score, 0.6495044);
