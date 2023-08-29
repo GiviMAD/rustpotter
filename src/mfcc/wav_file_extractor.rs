@@ -6,7 +6,7 @@ use crate::{
     audio::{GainNormalizerFilter, WAVEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
-        MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+        MFCCS_EXTRACTOR_FRAME_SHIFT_MS,
         MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
     Endianness, Sample, SampleFormat, WavFmt,
@@ -19,6 +19,7 @@ impl MfccWavFileExtractor {
     pub(crate) fn compute_mfccs<R: std::io::Read>(
         buffer_reader: BufReader<R>,
         out_rms_level: &mut f32,
+        mfcc_size: u16,
     ) -> Result<Vec<Vec<f32>>, String> {
         let wav_reader = WavReader::new(buffer_reader).map_err(|err| err.to_string())?;
         let fmt = wav_reader.spec().try_into()?;
@@ -35,7 +36,7 @@ impl MfccWavFileExtractor {
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
-            MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+            mfcc_size + 1, // first coefficient is dropped
             MFCCS_EXTRACTOR_PRE_EMPHASIS,
         );
         let mut rms_levels: Vec<f32> = Vec::new();

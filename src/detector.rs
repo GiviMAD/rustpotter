@@ -4,11 +4,10 @@ use crate::{
     audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
-        MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_NUM_COEFFICIENT,
-        MFCCS_EXTRACTOR_PRE_EMPHASIS,
+        MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
     mfcc::{MfccExtractor, VadDetector},
-    wakewords::{WakewordDetector, WakewordFile},
+    wakewords::{WakewordDetector, WakewordFile, WakewordV2},
     RustpotterConfig, Sample, ScoreMode, WakewordLoad, WakewordModel, WakewordRef,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
@@ -104,7 +103,7 @@ impl Rustpotter {
             DETECTOR_INTERNAL_SAMPLE_RATE,
             samples_per_frame,
             samples_per_shift,
-            MFCCS_EXTRACTOR_NUM_COEFFICIENT,
+            0, // setup on wakeword added
             MFCCS_EXTRACTOR_PRE_EMPHASIS,
         );
         let band_pass_filter = if config.filters.band_pass.enabled {
@@ -154,29 +153,37 @@ impl Rustpotter {
         })
     }
     /// Add wakeword ref to the detector.
-    pub fn add_wakeword_ref(&mut self, wakeword: WakewordRef) {
+    pub fn add_wakeword_ref(&mut self, wakeword: WakewordRef) -> Result<(), String> {
         self.add_wakeword(wakeword)
     }
     /// Add wakeword model to the detector.
-    pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) {
+    pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) -> Result<(), String> {
         self.add_wakeword(wakeword)
     }
-    /// Add wakeword from model bytes.
+    /// Add wakeword from file bytes.
     pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
-        WakewordRef::load_from_buffer(buffer)
-            .map(|wakeword| self.add_wakeword_ref(wakeword))
+        WakewordV2::load_from_buffer(buffer)
+            .and_then(|w| self.add_wakeword_ref(w.into()))
             .or_else(|_| {
-                WakewordModel::load_from_buffer(buffer)
-                    .map(|wakeword| self.add_wakeword_model(wakeword))
+                WakewordRef::load_from_buffer(buffer)
+                    .and_then(|wakeword| self.add_wakeword_ref(wakeword))
+                    .or_else(|_| {
+                        WakewordModel::load_from_buffer(buffer)
+                            .and_then(|wakeword| self.add_wakeword_model(wakeword))
+                    })
             })
     }
-    /// Add wakeword from model path.
+    /// Add wakeword from file path.
     pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
-        WakewordRef::load_from_file(path)
-            .map(|wakeword| self.add_wakeword_ref(wakeword))
+        WakewordV2::load_from_file(path)
+            .and_then(|w| self.add_wakeword_ref(w.into()))
             .or_else(|_| {
-                WakewordModel::load_from_file(path)
-                    .map(|wakeword| self.add_wakeword_model(wakeword))
+                WakewordRef::load_from_file(path)
+                    .and_then(|wakeword| self.add_wakeword_ref(wakeword))
+                    .or_else(|_| {
+                        WakewordModel::load_from_file(path)
+                            .and_then(|wakeword| self.add_wakeword_model(wakeword))
+                    })
             })
     }
     /// Remove wakeword by name or label.
@@ -190,10 +197,27 @@ impl Rustpotter {
             false
         }
     }
-    fn add_wakeword<T: WakewordFile>(&mut self, wakeword: T) {
+    fn add_wakeword<T: WakewordFile>(&mut self, wakeword: T) -> Result<(), String> {
+        if self.wakewords.is_empty() {
+            self.reset();
+            self.mfcc_extractor.set_out_size(wakeword.get_mfcc_size());
+        } else if !self
+            .wakewords
+            .iter()
+            .next()
+            .unwrap()
+            .get_mfcc_size()
+            .eq(&wakeword.get_mfcc_size())
+        {
+            return Err(
+                "Usage of wakewords with different mfcc size is not supported, ignoring wakeword"
+                    .to_string(),
+            );
+        }
         self.wakewords
             .push(wakeword.get_detector(self.score_ref, self.band_size, self.score_mode));
         self.on_wakeword_change();
+        return Ok(());
     }
     /// Update detection window and gain normalizer requirements.
     fn on_wakeword_change(&mut self) {
@@ -321,12 +345,7 @@ impl Rustpotter {
         if self.partial_detection.is_some() && self.detection_countdown == 0 {
             let wakeword_detection = self.partial_detection.take().unwrap();
             if wakeword_detection.counter >= self.min_scores {
-                self.buffering = true;
-                self.audio_mfcc_window.clear();
-                self.mfcc_extractor.reset();
-                if let Some(vad) = self.vad_detector.as_mut() {
-                    vad.reset();
-                }
+                self.reset();
                 return Some(wakeword_detection);
             }
         }
@@ -367,6 +386,14 @@ impl Rustpotter {
             .collect::<Vec<RustpotterDetection>>();
         wakeword_detections.sort_by(|a, b| b.score.total_cmp(&a.score));
         wakeword_detections.into_iter().next()
+    }
+    fn reset(&mut self) {
+        self.buffering = true;
+        self.audio_mfcc_window.clear();
+        self.mfcc_extractor.reset();
+        if let Some(vad) = self.vad_detector.as_mut() {
+            vad.reset();
+        }
     }
     #[cfg(feature = "record")]
     fn create_audio_record(&self, record_path: &str, detection: &str) {

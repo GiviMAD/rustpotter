@@ -162,4 +162,8 @@ impl WakewordDetector for WakewordComparator {
     fn get_rms_level(&self) -> f32 {
         self.rms_level
     }
+
+    fn get_mfcc_size(&self) -> u16 {
+        self.samples_features.values().next().unwrap()[0].len() as u16
+    }
 }

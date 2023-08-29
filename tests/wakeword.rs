@@ -14,7 +14,7 @@ fn it_creates_a_new_wakeword_from_samples() {
     ];
     let n_samples = samples.len();
     let wakeword =
-        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples, 5).unwrap();
     assert_eq!(
         wakeword.samples_features.len(),
         n_samples,
@@ -33,7 +33,7 @@ fn it_creates_a_new_wakeword_from_int_samples_which_saves_to_file() {
         dir.to_owned() + "/tests/resources/oye_casa_g_5.wav",
     ];
     let wakeword =
-        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples, 5).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_g.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
@@ -47,7 +47,7 @@ fn it_creates_another_wakeword_from_int_samples_which_saves_to_file() {
         dir.to_owned() + "/tests/resources/alexa3.wav",
     ];
     let wakeword =
-        WakewordRef::new_from_sample_files("alexa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("alexa".to_string(), None, None, samples, 5).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/alexa.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
@@ -64,7 +64,7 @@ fn it_creates_wakeword_from_float_samples_which_saves_to_file() {
         dir.to_owned() + "/tests/resources/oye_casa_real_6.wav",
     ];
     let wakeword =
-        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples).unwrap();
+        WakewordRef::new_from_sample_files("oye casa".to_string(), None, None, samples, 5).unwrap();
     let model_path = dir.to_owned() + "/tests/resources/oye_casa_real.rpw";
     wakeword.save_to_file(&model_path).unwrap();
 }
@@ -88,7 +88,7 @@ fn it_train_a_new_wakeword_from_samples() {
     let train_dir = dir.to_owned() + "/tests/resources/train";
     let test_dir = dir.to_owned() + "/tests/resources/test";
     let ww_model =
-        WakewordModel::train_from_sample_dirs(ModelType::MEDIUM, train_dir, test_dir, 0.12, 10, None).unwrap();
+        WakewordModel::train_from_sample_dirs(ModelType::MEDIUM, train_dir, test_dir, 0.12, 10, 10, None).unwrap();
     assert_eq!(ww_model.labels.len(), 2, "Sample features are extracted");
     assert_eq!(ww_model.weights.len(), 4, "Model weights are created");
     assert_eq!(

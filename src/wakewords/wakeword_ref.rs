@@ -16,7 +16,7 @@ pub struct WakewordRef {
     pub threshold: Option<f32>,
     pub avg_threshold: Option<f32>,
     pub rms_level: f32,
-    pub enabled: bool,
+    pub mfcc_size: u16,
 }
 impl WakewordLoad for WakewordRef {}
 impl WakewordSave for WakewordRef {}
@@ -35,6 +35,10 @@ impl WakewordFile for WakewordRef {
             score_mode,
         ))
     }
+
+    fn get_mfcc_size(&self) -> u16 {
+        self.mfcc_size
+    }
 }
 impl WakewordRef {
     pub(crate) fn new(
@@ -48,6 +52,7 @@ impl WakewordRef {
         if samples_features.is_empty() {
             return Err("Can not create an empty wakeword".to_string());
         }
+        let mfcc_size = samples_features.values().next().unwrap()[0].len() as u16;
         Ok(WakewordRef {
             name,
             threshold,
@@ -55,7 +60,7 @@ impl WakewordRef {
             avg_features,
             samples_features,
             rms_level,
-            enabled: true,
+            mfcc_size: mfcc_size,
         })
     }
 }

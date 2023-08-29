@@ -11,6 +11,7 @@ use super::{WakewordSave, WakewordLoad, WakewordFile, WakewordDetector};
 pub struct WakewordModel {
     pub labels: Vec<String>,
     pub train_size: usize,
+    pub mfcc_size: u16,
     pub m_type: ModelType,
     pub weights: ModelWeights,
     pub rms_level: f32,
@@ -49,6 +50,10 @@ impl WakewordSave for WakewordModel {}
 impl WakewordFile for WakewordModel {
     fn get_detector(&self, score_ref: f32, _: u16, _: ScoreMode) -> Box<dyn WakewordDetector> {
         Box::new(WakewordNN::new(self, score_ref))
+    }
+
+    fn get_mfcc_size(&self) -> u16 {
+        self.mfcc_size
     }
 }
 

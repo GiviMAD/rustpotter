@@ -5,6 +5,23 @@ use std::{
 
 use rustpotter::{Rustpotter, RustpotterConfig, SampleFormat, ScoreMode};
 
+
+#[test]
+fn it_can_detect_wakewords_with_v2_file() {
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.2;
+    config.detector.threshold = 0.5;
+    config.filters.gain_normalizer.enabled = false;
+    config.filters.band_pass.enabled = false;
+    config.detector.score_mode = ScoreMode::Max;
+    let detected_wakewords = run_detection_simulation(config, "/tests/resources/oye_casa_g_v2.rpw");
+    assert_eq!(detected_wakewords.len(), 2);
+    assert_eq!(detected_wakewords[0].avg_score, 0.6495044);
+    assert_eq!(detected_wakewords[0].score, 0.7310586);
+    assert_eq!(detected_wakewords[1].avg_score, 0.5804737);
+    assert_eq!(detected_wakewords[1].score, 0.721843);
+}
+
 #[test]
 fn it_can_detect_wakewords_with_max_score_mode() {
     let mut config = RustpotterConfig::default();
@@ -207,10 +224,10 @@ fn it_can_detect_wakewords_using_trained_model() {
         "/tests/resources/ok_casa.wav",
     );
     assert_eq!(detected_wakewords.len(), 1);
-    // assert_eq!(detected_wakewords[0].avg_score, 0.64608675);
-    // assert_eq!(detected_wakewords[0].score, 0.60123634);
-    // assert_eq!(detected_wakewords[1].avg_score, 0.5288923);
-    // assert_eq!(detected_wakewords[1].score, 0.63968724);
+    assert_eq!(detected_wakewords[0].avg_score, 0.9999992);
+    assert_eq!(detected_wakewords[0].score, 0.9999992);
+    assert_eq!(detected_wakewords[0].scores["ok_casa"], 26.525837);
+    assert_eq!(detected_wakewords[0].scores["none"], -6.555033);
 }
 fn run_detection_with_audio_file(
     mut config: RustpotterConfig,

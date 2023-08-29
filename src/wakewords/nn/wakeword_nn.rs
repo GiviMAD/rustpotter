@@ -1,8 +1,9 @@
 use crate::{
-    constants::{MFCCS_EXTRACTOR_OUT_BANDS, NN_NONE_LABEL, MFCCS_EXTRACTOR_OUT_SHIFTS},
+    constants::{MFCCS_EXTRACTOR_OUT_SHIFTS, NN_NONE_LABEL},
+    mfcc::MfccNormalizer,
     wakewords::WakewordDetector,
     wakewords::{ModelWeights, TensorData},
-    RustpotterDetection, WakewordModel, ModelType, mfcc::MfccNormalizer,
+    ModelType, RustpotterDetection, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{Linear, VarBuilder, VarMap};
@@ -15,6 +16,7 @@ pub(crate) struct WakewordNN {
     labels: Vec<String>,
     score_ref: f32,
     rms_level: f32,
+    mfcc_size: u16,
 }
 
 impl WakewordNN {
@@ -25,7 +27,8 @@ impl WakewordNN {
             m_type,
             &var_map,
             &Device::Cpu,
-            wakeword_model.train_size * MFCCS_EXTRACTOR_OUT_BANDS,
+            wakeword_model.train_size * wakeword_model.mfcc_size as usize,
+            wakeword_model.mfcc_size,
             wakeword_model.labels.len(),
             Some(wakeword_model),
         )
@@ -37,6 +40,7 @@ impl WakewordNN {
             rms_level: wakeword_model.rms_level,
             labels: wakeword_model.labels.clone(),
             mfcc_frames: wakeword_model.train_size,
+            mfcc_size: wakeword_model.mfcc_size,
         }
     }
 
@@ -132,6 +136,9 @@ impl WakewordDetector for WakewordNN {
     fn get_rms_level(&self) -> f32 {
         self.rms_level
     }
+    fn get_mfcc_size(&self) -> u16 {
+        self.mfcc_size
+    }
 }
 
 fn calc_inverse_similarity(n1: &f32, n2: &f32, reference: &f32) -> f32 {
@@ -144,19 +151,35 @@ pub(crate) fn init_model(
     var_map: &VarMap,
     dev: &Device,
     features_size: usize,
+    mfcc_size: u16,
     labels_size: usize,
     wakeword: Option<&WakewordModel>,
 ) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
     match m_type {
-        ModelType::SMALL => {
-            init_model_impl::<SmallModel>(var_map, dev, features_size, labels_size, wakeword)
-        }
-        ModelType::MEDIUM => {
-            init_model_impl::<MediumModel>(var_map, dev, features_size, labels_size, wakeword)
-        }
-        ModelType::LARGE => {
-            init_model_impl::<LargeModel>(var_map, dev, features_size, labels_size, wakeword)
-        }
+        ModelType::SMALL => init_model_impl::<SmallModel>(
+            var_map,
+            dev,
+            features_size,
+            mfcc_size,
+            labels_size,
+            wakeword,
+        ),
+        ModelType::MEDIUM => init_model_impl::<MediumModel>(
+            var_map,
+            dev,
+            features_size,
+            mfcc_size,
+            labels_size,
+            wakeword,
+        ),
+        ModelType::LARGE => init_model_impl::<LargeModel>(
+            var_map,
+            dev,
+            features_size,
+            mfcc_size,
+            labels_size,
+            wakeword,
+        ),
     }
 }
 
@@ -164,11 +187,12 @@ pub(super) fn init_model_impl<M: ModelImpl + 'static>(
     var_map: &VarMap,
     dev: &Device,
     features_size: usize,
+    mfcc_size: u16,
     labels_size: usize,
     wakeword: Option<&WakewordModel>,
 ) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
     let vs = VarBuilder::from_varmap(var_map, DType::F32, dev);
-    let model = M::new(vs.clone(), features_size, labels_size)?;
+    let model = M::new(vs.clone(), features_size, mfcc_size as usize, labels_size)?;
     if let Some(wakeword) = wakeword {
         load_weights(var_map, &wakeword.weights)?;
     }
@@ -199,12 +223,16 @@ fn load_weights(
     model_weights: &HashMap<String, TensorData>,
 ) -> Result<(), candle_core::Error> {
     for (name, var) in var_map.data().lock().unwrap().iter_mut() {
-        match model_weights.get(name) {
-            Some(data) => {
-                var.set(&data.into()).expect("Error loading model weights");
-            }
-            None => panic!("Incorrect model layers"),
-        };
+        let result = model_weights
+            .get(name)
+            .and_then(|data| Some(var.set(&data.into())))
+            .unwrap_or(Err(candle_core::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Incorrect model layers",
+            ))));
+        if result.is_err() {
+            return result;
+        }
     }
     Ok(())
 }
@@ -230,21 +258,32 @@ pub(super) struct LargeModel {
 pub(super) struct MediumModel {
     ln1: Linear,
     ln2: Linear,
+    ln3: Linear,
 }
 pub(super) struct SmallModel {
     ln1: Linear,
     ln2: Linear,
 }
 pub(crate) trait ModelImpl: Send {
-    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self>
+    fn new(
+        vs: VarBuilder,
+        input_size: usize,
+        mfcc_size: usize,
+        labels_size: usize,
+    ) -> candle_core::Result<Self>
     where
         Self: Sized;
     fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor>;
 }
 
 impl ModelImpl for SmallModel {
-    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
-        let inter_size = input_size / MFCCS_EXTRACTOR_OUT_SHIFTS.pow(2);
+    fn new(
+        vs: VarBuilder,
+        input_size: usize,
+        mfcc_size: usize,
+        labels_size: usize,
+    ) -> candle_core::Result<Self> {
+        let inter_size = (input_size / mfcc_size) / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
         let ln1 = candle_nn::linear(input_size, inter_size, vs.pp("ln1"))?;
         let ln2 = candle_nn::linear(inter_size, labels_size, vs.pp("ln2"))?;
         Ok(Self { ln1, ln2 })
@@ -258,25 +297,37 @@ impl ModelImpl for SmallModel {
 }
 
 impl ModelImpl for MediumModel {
-    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
-        let inter_size = input_size / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
-        let ln1 = candle_nn::linear(input_size, inter_size, vs.pp("ln1"))?;
-        let ln2 = candle_nn::linear(inter_size, labels_size, vs.pp("ln2"))?;
-        Ok(Self { ln1, ln2 })
+    fn new(
+        vs: VarBuilder,
+        input_size: usize,
+        mfcc_size: usize,
+        labels_size: usize,
+    ) -> candle_core::Result<Self> {
+        let inter_size1 = (input_size / mfcc_size) / MFCCS_EXTRACTOR_OUT_SHIFTS;
+        let ln1 = candle_nn::linear(input_size, inter_size1, vs.pp("ln1"))?;
+        let inter_size2 = (input_size / mfcc_size) / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
+        let ln2: Linear = candle_nn::linear(inter_size1, inter_size2, vs.pp("ln2"))?;
+        let ln3: Linear = candle_nn::linear(inter_size2, labels_size, vs.pp("ln3"))?;
+        Ok(Self { ln1, ln2, ln3 })
     }
 
     fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
-        let xs = self.ln1.forward(xs)?;
-        let xs = xs.relu()?;
-        self.ln2.forward(&xs)
+        let xs = self.ln1.forward(xs)?.relu()?;
+        let xs = self.ln2.forward(&xs)?.relu()?;
+        self.ln3.forward(&xs)
     }
 }
 
 impl ModelImpl for LargeModel {
-    fn new(vs: VarBuilder, input_size: usize, labels_size: usize) -> candle_core::Result<Self> {
-        let inter_size1 = input_size / MFCCS_EXTRACTOR_OUT_SHIFTS;
+    fn new(
+        vs: VarBuilder,
+        input_size: usize,
+        mfcc_size: usize,
+        labels_size: usize,
+    ) -> candle_core::Result<Self> {
+        let inter_size1 = ((input_size / mfcc_size) / MFCCS_EXTRACTOR_OUT_SHIFTS) * 2;
         let ln1 = candle_nn::linear(input_size, inter_size1, vs.pp("ln1"))?;
-        let inter_size2 = input_size / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
+        let inter_size2 = (input_size / mfcc_size) / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
         let ln2: Linear = candle_nn::linear(inter_size1, inter_size2, vs.pp("ln2"))?;
         let ln3: Linear = candle_nn::linear(inter_size2, labels_size, vs.pp("ln3"))?;
         Ok(Self { ln1, ln2, ln3 })

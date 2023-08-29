@@ -2,10 +2,7 @@ use super::wakeword_nn::{
     flat_features, get_tensors_data, init_model_impl, LargeModel, MediumModel, ModelImpl,
     SmallModel,
 };
-use crate::{
-    constants::MFCCS_EXTRACTOR_OUT_BANDS, mfcc::MfccWavFileExtractor, wakewords::ModelWeights,
-    ModelType, WakewordModel,
-};
+use crate::{mfcc::MfccWavFileExtractor, wakewords::ModelWeights, ModelType, WakewordModel};
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
 use std::{
@@ -19,6 +16,7 @@ pub trait WakewordModelTrain {
         m_type: ModelType,
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
+        mfcc_size: u16,
         learning_rate: f64,
         epochs: usize,
         wakeword_model: Option<WakewordModel>,
@@ -44,11 +42,21 @@ pub trait WakewordModelTrain {
             .as_ref()
             .map(|m| m.m_type.clone())
             .unwrap_or(m_type);
+        let mfcc_size = wakeword_model
+            .as_ref()
+            .map(|m| m.mfcc_size)
+            .unwrap_or(mfcc_size);
         let mut rms_level: f32 = f32::NAN;
-        let mut labeled_mfccs = get_mfccs_labeled(&samples, &mut labels, &mut rms_level, true)?;
+        let mut labeled_mfccs =
+            get_mfccs_labeled(&samples, &mut labels, &mut rms_level, true, mfcc_size)?;
         let mut noop_rms_level: f32 = f32::NAN;
-        let mut test_labeled_mfccs =
-            get_mfccs_labeled(&test_samples, &mut labels, &mut noop_rms_level, false)?;
+        let mut test_labeled_mfccs = get_mfccs_labeled(
+            &test_samples,
+            &mut labels,
+            &mut noop_rms_level,
+            false,
+            mfcc_size,
+        )?;
         println!("Train samples {}.", labeled_mfccs.len());
         println!("Test samples {}.", test_labeled_mfccs.len());
         println!("Labels: {:?}.", labels);
@@ -63,11 +71,11 @@ pub trait WakewordModelTrain {
         // use previous training size or get it from the training samples
         let input_len = wakeword_model
             .as_ref()
-            .map(|m| m.train_size * MFCCS_EXTRACTOR_OUT_BANDS)
+            .map(|m| m.train_size * mfcc_size as usize)
             .unwrap_or_else(|| labeled_mfccs.iter().map(|f| f.0.len()).max().unwrap());
         println!(
             "Training on frames of {}ms",
-            (input_len / MFCCS_EXTRACTOR_OUT_BANDS as usize) * 10
+            (input_len / mfcc_size as usize) * 10
         );
         // pad or truncate data
         labeled_mfccs
@@ -76,7 +84,8 @@ pub trait WakewordModelTrain {
             .for_each(|i| i.0.resize(input_len, 0.));
         // run training loop
         let dataset = WakewordDataset {
-            features: input_len,
+            input_len,
+            mfcc_size,
             labels: labels.len(),
             train_labels: get_labels_tensor_stack(&labeled_mfccs)?,
             train_features: get_mfccs_tensor_stack(labeled_mfccs)?,
@@ -105,7 +114,8 @@ pub trait WakewordModelTrain {
         Ok(WakewordModel {
             labels,
             m_type,
-            train_size: input_len / MFCCS_EXTRACTOR_OUT_BANDS as usize,
+            train_size: input_len / mfcc_size as usize,
+            mfcc_size,
             weights,
             rms_level,
         })
@@ -116,12 +126,14 @@ pub trait WakewordModelTrain {
         test_dir: String,
         learning_rate: f64,
         epochs: usize,
+        mfcc_size: u16,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
         Self::train_from_sample_buffers(
             m_type,
             get_files_data_map(train_dir)?,
             get_files_data_map(test_dir)?,
+            mfcc_size,
             learning_rate,
             epochs,
             wakeword_model,
@@ -141,7 +153,14 @@ fn training_loop<M: ModelImpl + 'static>(
 
     let var_map = VarMap::new();
     let from_wakeword = wakeword.is_some();
-    let model = init_model_impl::<M>(&var_map, &dev, m.features, m.labels, wakeword.as_ref())?;
+    let model = init_model_impl::<M>(
+        &var_map,
+        &dev,
+        m.input_len,
+        m.mfcc_size,
+        m.labels,
+        wakeword.as_ref(),
+    )?;
     let sgd = candle_nn::SGD::new(var_map.all_vars(), args.learning_rate);
     let test_features = m.test_features.to_device(&dev)?;
     let test_labels = m.test_labels.to_dtype(DType::U32)?.to_device(&dev)?;
@@ -172,7 +191,8 @@ struct WakewordDataset {
     pub test_features: Tensor,
     pub test_labels: Tensor,
     pub labels: usize,
-    pub features: usize,
+    pub input_len: usize,
+    pub mfcc_size: u16,
 }
 
 struct TrainingArgs {
@@ -235,6 +255,7 @@ fn get_mfccs_labeled(
     labels: &mut Vec<String>,
     sample_rms_level: &mut f32,
     new_labels: bool,
+    mfcc_size: u16,
 ) -> Result<Vec<(Vec<f32>, u32)>, Error> {
     let mut labeled_data: Vec<(Vec<f32>, u32)> = Vec::new();
     for (name, buffer) in samples {
@@ -263,6 +284,7 @@ fn get_mfccs_labeled(
         let mfccs = MfccWavFileExtractor::compute_mfccs(
             BufReader::new(buffer.as_slice()),
             &mut tmp_sample_rms_level,
+            mfcc_size,
         )
         .map_err(|msg| Error::new(ErrorKind::Other, msg))?;
         if sample_rms_level.is_nan() {

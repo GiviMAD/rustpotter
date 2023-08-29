@@ -11,6 +11,7 @@ pub trait WakewordRefBuildFromBuffers {
         threshold: Option<f32>,
         avg_threshold: Option<f32>,
         samples: HashMap<String, Vec<u8>>,
+        mfcc_size: u16,
     ) -> Result<WakewordRef, String> {
         let mut samples_features: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
         let mut rms_level = 0.;
@@ -21,6 +22,7 @@ pub trait WakewordRefBuildFromBuffers {
                 MfccWavFileExtractor::compute_mfccs(
                     BufReader::new(buffer.as_slice()),
                     &mut sample_rms_level,
+                    mfcc_size,
                 )?,
             );
             if sample_rms_level > rms_level {
@@ -43,6 +45,7 @@ pub trait WakewordRefBuildFromFiles {
         threshold: Option<f32>,
         avg_threshold: Option<f32>,
         samples: Vec<String>,
+        mfcc_size: u16,
     ) -> Result<WakewordRef, String> {
         let mut samples_features: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
         let mut rms_levels: Vec<f32> = Vec::new();
@@ -66,6 +69,7 @@ pub trait WakewordRefBuildFromFiles {
                 MfccWavFileExtractor::compute_mfccs(
                     BufReader::new(file),
                     &mut sample_rms_level,
+                    mfcc_size
                 )?,
             );
             rms_levels.push(sample_rms_level);

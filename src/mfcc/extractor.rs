@@ -8,9 +8,10 @@ pub struct MfccExtractor {
     samples_per_frame: usize,
     samples_per_shift: usize,
     magnitude_spectrum_size: usize,
+    sample_rate: usize,
+    // state
     filter_bank: Vec<Vec<f32>>,
     hamming_window: Vec<f32>,
-    // state
     samples: Vec<f32>,
 }
 
@@ -19,7 +20,7 @@ impl MfccExtractor {
         sample_rate: usize,
         samples_per_frame: usize,
         samples_per_shift: usize,
-        num_coefficients: usize,
+        num_coefficients: u16,
         pre_emphasis_coefficient: f32,
     ) -> MfccExtractor {
         let min_frequency = 0;
@@ -30,17 +31,31 @@ impl MfccExtractor {
             samples_per_shift,
             samples_per_frame,
             pre_emphasis_coefficient,
-            num_coefficients,
+            num_coefficients: num_coefficients as usize,
             magnitude_spectrum_size,
             filter_bank: Self::new_mel_filter_bank(
                 sample_rate,
                 magnitude_spectrum_size,
-                num_coefficients,
+                num_coefficients as usize,
                 min_frequency,
                 max_frequency,
             ),
             hamming_window: Self::new_hamming_window(samples_per_frame),
+            sample_rate,
         }
+    }
+    pub fn set_out_size(&mut self, out_size: u16) {
+        self.num_coefficients = (out_size + 1) as usize; // first coefficient is dropped
+        let min_frequency = 0;
+        let max_frequency = self.sample_rate / 2;
+        self.filter_bank = Self::new_mel_filter_bank(
+            self.sample_rate,
+            self.magnitude_spectrum_size,
+            self.num_coefficients,
+            min_frequency,
+            max_frequency,
+        );
+        self.reset();
     }
     pub fn compute(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
         audio_samples
@@ -64,7 +79,8 @@ impl MfccExtractor {
     }
     fn extract_mfccs(&self, samples: &[f32]) -> Vec<f32> {
         let magnitude_spectrum = self.calculate_magnitude_spectrum(samples);
-        let mut mfcc_frame = self.calculate_mel_frequency_cepstral_coefficients(&magnitude_spectrum);
+        let mut mfcc_frame =
+            self.calculate_mel_frequency_cepstral_coefficients(&magnitude_spectrum);
         mfcc_frame.drain(0..1);
         mfcc_frame
     }

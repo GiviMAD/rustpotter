@@ -48,4 +48,6 @@ pub(crate) trait WakewordFile {
         band_size: u16,
         score_mode: ScoreMode,
     ) -> Box<dyn WakewordDetector>;
+    
+    fn get_mfcc_size(&self) -> u16;
 }
