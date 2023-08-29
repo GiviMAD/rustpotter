@@ -6,7 +6,7 @@ use crate::{
     ModelType, RustpotterDetection, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, Var};
-use candle_nn::{Linear, VarBuilder, VarMap};
+use candle_nn::{Linear, VarBuilder, VarMap, Module};
 use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 pub(crate) struct WakewordNN {
