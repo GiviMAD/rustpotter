@@ -1,5 +1,6 @@
 use rustpotter::{
-    WakewordSave, WakewordLoad, WakewordModelTrain, WakewordRef, WakewordModel, WakewordRefBuildFromFiles, ModelType
+    ModelType, WakewordLoad, WakewordModel, WakewordModelTrain, WakewordRef,
+    WakewordRefBuildFromFiles, WakewordSave,
 };
 
 #[test]
@@ -87,12 +88,19 @@ fn it_train_a_new_wakeword_from_samples() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let train_dir = dir.to_owned() + "/tests/resources/train";
     let test_dir = dir.to_owned() + "/tests/resources/test";
-    let ww_model =
-        WakewordModel::train_from_sample_dirs(ModelType::MEDIUM, train_dir, test_dir, 0.12, 10, 10, None).unwrap();
+    let mfcc_size = 16;
+    let ww_model = WakewordModel::train_from_sample_dirs(
+        ModelType::MEDIUM,
+        train_dir,
+        test_dir,
+        0.12,
+        10,
+        mfcc_size,
+        None,
+    )
+    .unwrap();
     assert_eq!(ww_model.labels.len(), 2, "Sample features are extracted");
-    assert_eq!(ww_model.weights.len(), 4, "Model weights are created");
-    assert_eq!(
-        ww_model.train_size, 168,
-        "Expected number of feature vectors"
-    );
+    assert_eq!(ww_model.weights.len(), 6, "Model weights are created");
+    assert_eq!(ww_model.train_size, 168, "Correct number of mfcc vectors");
+    assert_eq!(ww_model.mfcc_size, mfcc_size, "Correct mfcc vector length");
 }

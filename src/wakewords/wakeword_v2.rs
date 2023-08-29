@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{WakewordLoad, WakewordRef, WakewordSave};
+use crate::{WakewordLoad, WakewordRef};
 
-/// Wakeword representation.
+/// Deprecated wakeword representation from v2
 #[derive(Serialize, Deserialize)]
 pub struct WakewordV2 {
     pub name: String,
@@ -15,18 +15,16 @@ pub struct WakewordV2 {
     pub enabled: bool,
 }
 impl WakewordLoad for WakewordV2 {}
-impl WakewordSave for WakewordV2 {}
 impl Into<WakewordRef> for WakewordV2 {
     fn into(self) -> WakewordRef {
-        let mfcc_size = self.samples_features.values().next().unwrap()[0].len() as u16;
         WakewordRef {
             name: self.name,
-            avg_features: self.avg_features,
-            samples_features: self.samples_features,
+            mfcc_size: self.samples_features.values().next().unwrap()[0].len() as u16,
             threshold: self.threshold,
             avg_threshold: self.avg_threshold,
+            avg_features: self.avg_features,
+            samples_features: self.samples_features,
             rms_level: self.rms_level,
-            mfcc_size,
         }
     }
 }
