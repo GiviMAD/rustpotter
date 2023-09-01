@@ -290,6 +290,17 @@ impl Rustpotter {
         let float_samples = self.wav_encoder.rencode_and_resample::<T>(audio_samples);
         self.process_audio(float_samples)
     }
+    /// Clean internal State
+    ///
+    pub fn reset(&mut self) {
+        self.buffering = true;
+        self.partial_detection = None;
+        self.audio_mfcc_window.clear();
+        self.mfcc_extractor.reset();
+        if let Some(vad) = self.vad_detector.as_mut() {
+            vad.reset();
+        }
+    }
     fn process_audio(&mut self, mut audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
         #[cfg(feature = "record")]
         if self.record_path.is_some() {
@@ -387,14 +398,6 @@ impl Rustpotter {
         wakeword_detections.sort_by(|a, b| b.score.total_cmp(&a.score));
         wakeword_detections.into_iter().next()
     }
-    fn reset(&mut self) {
-        self.buffering = true;
-        self.audio_mfcc_window.clear();
-        self.mfcc_extractor.reset();
-        if let Some(vad) = self.vad_detector.as_mut() {
-            vad.reset();
-        }
-    }
     #[cfg(feature = "record")]
     fn create_audio_record(&self, record_path: &str, detection: &str) {
         let spec = hound::WavSpec {
@@ -414,7 +417,8 @@ impl Rustpotter {
         if let Ok(mut writer) = writer {
             self.audio_window
                 .iter()
-                .for_each(|sample| writer.write_sample(*sample).ok().unwrap_or(()));
+                .for_each(|sample| _ = writer.write_sample(*sample));
+            _ = writer.flush();
         }
     }
 }
