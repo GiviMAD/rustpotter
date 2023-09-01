@@ -7,8 +7,7 @@ use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
 use std::{
     collections::HashMap,
-    fs::{self},
-    io::{BufReader, Error, ErrorKind},
+    io::{BufReader, Error, ErrorKind}, fs,
 };
 
 pub trait WakewordModelTrain {
