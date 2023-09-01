@@ -146,29 +146,25 @@ Please note that `both run entirely on your browser, your voice is not sent anyw
 
 * [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `shell`. (Window, macOs and Linux).
 * [rustpotter-java](https://github.com/GiviMAD/rustpotter-java): Use Rustpotter on `java`. (Mvn package and generator)
-* [rustpotter-wasm](https://github.com/GiviMAD/rustpotter-wasm): Generator for javascript + wasm module.
-* [rustpotter-web](https://www.npmjs.com/package/rustpotter-web): Use Rustpotter on the `web`. (Npm package generated with rustpotter-wasm)
-* [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter as a `Web Audio API node processor`. (Runs rustpotter-web using an AudioWorklet/ScriptProcessor depending on availability)
+* [rustpotter-web](https://www.npmjs.com/package/rustpotter-web): Use Rustpotter on `javascript`. (Npm package generated with [rustpotter-wasm](https://github.com/GiviMAD/rustpotter-wasm))
+* [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter as a `Web Audio API node processor`. (Recommended for `browser`)
 
-## Versioning
-
-
-Rustpotter versions prior to v2.0.0 are not recommended, this version was started from scratch reusing some code.
-
-Since 1.0.0 it will stick to [semver](https://semver.org).
 ## Changelog overview
 
-A minimal overview of the changes introduced on each version.
+A minimal overview of the changes introduced on each major version.
 
 v3:
+
 - Introduce wakeword models and refactor previous functionality as wakeword references.
 - Allow configurable mfccs number by wakeword (does not support adding wakewords of different sizes).
 
 v2:
+
 - Rebuild the library, incompatible with v1.
 - Add audio filters.
 
 v1:
+
 - Initial version.
 
 ## Basic Usage
@@ -182,14 +178,14 @@ let mut rustpotter_config = RustpotterConfig::default();
 // Instantiate rustpotter
 let mut rustpotter = Rustpotter::new(&rustpotter_config).unwrap();
 // load a wakeword
-rustpotter.add_wakeword_from_file("./tests/resources/hey_home_g.rpw").unwrap();
+rustpotter.add_wakeword_from_file("./tests/resources/hey_home.rpw").unwrap();
 // You need a buffer of size `rustpotter.get_samples_per_frame()` when using samples.
 // You need a buffer of size `rustpotter.get_bytes_per_frame()` when using bytes.
-let mut sample_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
+let mut samples_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
 // while true { Iterate forever
-    // fill the buffer with the required samples/bytes
+    // fill the buffer with the required samples
     ...
-    let detection = rustpotter.process(sample_buffer);
+    let detection = rustpotter.process(samples_buffer);
     if let Some(detection) = detection {
         println!("{:?}", detection);
     }
