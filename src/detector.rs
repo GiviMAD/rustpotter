@@ -371,7 +371,7 @@ impl Rustpotter {
             {
                 #[cfg(feature = "record")]
                 if let Some(record_path) = self.record_path.as_ref() {
-                    self.create_audio_record(record_path, &wakeword_detection.name);
+                    self.create_audio_record(record_path, &wakeword_detection);
                 }
                 self.partial_detection = Some(wakeword_detection);
             } else {
@@ -399,7 +399,7 @@ impl Rustpotter {
         wakeword_detections.into_iter().next()
     }
     #[cfg(feature = "record")]
-    fn create_audio_record(&self, record_path: &str, detection: &str) {
+    fn create_audio_record(&self, record_path: &str, detection: &RustpotterDetection) {
         let spec = hound::WavSpec {
             sample_rate: DETECTOR_INTERNAL_SAMPLE_RATE as u32,
             sample_format: hound::SampleFormat::Float,
@@ -411,8 +411,15 @@ impl Rustpotter {
         if !record_folder.exists() {
             return;
         }
-        let file_path = record_folder
-            .join("[".to_string() + detection + "]" + timestamp.to_string().as_str() + ".wav");
+        let file_path = record_folder.join(
+            "[".to_string()
+                + &detection.name
+                + "]"
+                + timestamp.to_string().as_str()
+                + "-"
+                + &detection.score.to_string().replace(".", "_")
+                + ".wav",
+        );
         let writer = hound::WavWriter::create(file_path.as_os_str(), spec);
         if let Ok(mut writer) = writer {
             self.audio_window
