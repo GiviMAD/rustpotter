@@ -5,7 +5,6 @@ use std::{
 
 use rustpotter::{Rustpotter, RustpotterConfig, SampleFormat, ScoreMode, VADMode};
 
-
 #[test]
 fn it_can_detect_wakewords_with_v2_file() {
     let mut config = RustpotterConfig::default();
@@ -69,7 +68,6 @@ fn it_can_detect_wakewords_with_average_score_mode() {
     assert_eq!(detected_wakewords[1].avg_score, 0.5750509);
     assert_eq!(detected_wakewords[1].score, 0.6313083);
 }
-
 
 #[test]
 fn it_can_detect_wakewords_with_vad_mode() {
@@ -217,18 +215,38 @@ fn it_can_detect_wakewords_on_record_with_noise_using_filters() {
 
 #[test]
 fn it_can_detect_wakewords_using_trained_model() {
-    let config = RustpotterConfig::default();
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.;
     let detected_wakewords = run_detection_with_audio_file(
         config,
         "/tests/resources/trained-small.rpw",
         "/tests/resources/ok_casa.wav",
     );
     assert_eq!(detected_wakewords.len(), 1);
+    assert_eq!(detected_wakewords[0].counter, 43);
+    assert_eq!(detected_wakewords[0].avg_score, 0.);
+    assert_eq!(detected_wakewords[0].score, 0.9999992);
+    assert_eq!(detected_wakewords[0].scores["ok_casa"], 26.525837);
+    assert_eq!(detected_wakewords[0].scores["none"], -6.555033);
+}
+
+#[test]
+fn it_can_detect_wakewords_using_trained_model_and_avg_score() {
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.5;
+    let detected_wakewords = run_detection_with_audio_file(
+        config,
+        "/tests/resources/trained-small.rpw",
+        "/tests/resources/ok_casa.wav",
+    );
+    assert_eq!(detected_wakewords.len(), 1);
+    assert_eq!(detected_wakewords[0].counter, 43);
     assert_eq!(detected_wakewords[0].avg_score, 0.9999992);
     assert_eq!(detected_wakewords[0].score, 0.9999992);
     assert_eq!(detected_wakewords[0].scores["ok_casa"], 26.525837);
     assert_eq!(detected_wakewords[0].scores["none"], -6.555033);
 }
+
 fn run_detection_with_audio_file(
     mut config: RustpotterConfig,
     model_path: &str,

@@ -6,7 +6,7 @@ use crate::{
     ModelType, RustpotterDetection, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, Var};
-use candle_nn::{Linear, VarBuilder, VarMap, Module};
+use candle_nn::{Linear, Module, VarBuilder, VarMap};
 use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 pub(crate) struct WakewordNN {
@@ -58,7 +58,12 @@ impl WakewordNN {
                 }
             })
     }
-    fn run_detection_by_label(&self, label: &str, prob_vec: &[f32]) -> Option<RustpotterDetection> {
+    fn run_detection_by_label(
+        &self,
+        label: &str,
+        prob_vec: &[f32],
+        calc_avg_score: bool,
+    ) -> Option<RustpotterDetection> {
         if !NN_NONE_LABEL.eq(label) {
             let scores: HashMap<String, f32> = prob_vec
                 .iter()
@@ -67,14 +72,22 @@ impl WakewordNN {
                 .collect();
             let none_prob = scores.get(NN_NONE_LABEL).unwrap_or(&0.);
             let label_prob = scores.get(label).unwrap_or(&0.);
-            let second_prob = prob_vec
-                .into_iter()
-                .filter(|p| !label_prob.eq(*p))
-                .max_by(|a, b| b.total_cmp(a))
-                .unwrap_or(&0.);
+            let second_prob = if calc_avg_score {
+                prob_vec
+                    .into_iter()
+                    .filter(|p| !label_prob.eq(*p))
+                    .max_by(|a, b| b.total_cmp(a))
+                    .unwrap_or(&0.)
+            } else {
+                &0.
+            };
             Some(RustpotterDetection {
                 name: label.to_string(),
-                avg_score: calc_inverse_similarity(label_prob, second_prob, &self.score_ref),
+                avg_score: if calc_avg_score {
+                    calc_inverse_similarity(label_prob, second_prob, &self.score_ref)
+                } else {
+                    0.
+                },
                 score: calc_inverse_similarity(label_prob, none_prob, &self.score_ref),
                 scores,
                 counter: usize::MIN, // added by the detector
@@ -110,9 +123,13 @@ impl WakewordNN {
         }
     }
 
-    fn handle_probabilities(&self, prob_vec: Vec<f32>) -> Option<RustpotterDetection> {
+    fn handle_probabilities(
+        &self,
+        prob_vec: Vec<f32>,
+        calc_avg_score: bool,
+    ) -> Option<RustpotterDetection> {
         self.get_label(&prob_vec)
-            .and_then(|label| self.run_detection_by_label(&label, &prob_vec))
+            .and_then(|label| self.run_detection_by_label(&label, &prob_vec, calc_avg_score))
     }
 }
 impl WakewordDetector for WakewordNN {
@@ -127,7 +144,7 @@ impl WakewordDetector for WakewordNN {
     ) -> Option<RustpotterDetection> {
         mfcc_frames.truncate(self.mfcc_frames);
         self.predict_labels(MfccNormalizer::normalize(mfcc_frames))
-            .and_then(|prob_vec| self.handle_probabilities(prob_vec))
+            .and_then(|prob_vec| self.handle_probabilities(prob_vec, avg_threshold != 0.))
             .and_then(|detection| self.validate_scores(detection, threshold, avg_threshold))
     }
     fn contains(&self, name: &str) -> bool {
