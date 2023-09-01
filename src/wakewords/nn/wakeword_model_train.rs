@@ -7,7 +7,8 @@ use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
 use std::{
     collections::HashMap,
-    io::{BufReader, Error, ErrorKind}, fs,
+    fs,
+    io::{BufReader, Error, ErrorKind},
 };
 
 pub trait WakewordModelTrain {
@@ -15,9 +16,10 @@ pub trait WakewordModelTrain {
         m_type: ModelType,
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
-        mfcc_size: u16,
         learning_rate: f64,
         epochs: usize,
+        test_epochs: usize,
+        mfcc_size: u16,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
         if samples.is_empty() {
@@ -73,7 +75,7 @@ pub trait WakewordModelTrain {
             .map(|m| m.train_size * mfcc_size as usize)
             .unwrap_or_else(|| labeled_mfccs.iter().map(|f| f.0.len()).max().unwrap());
         println!(
-            "Training on frames of {}ms",
+            "Training on {}ms of audio",
             (input_len / mfcc_size as usize) * 10
         );
         // pad or truncate data
@@ -94,6 +96,7 @@ pub trait WakewordModelTrain {
         let training_args = TrainingArgs {
             learning_rate,
             epochs,
+            test_epochs,
         };
         let weights = match m_type {
             ModelType::SMALL => {
@@ -125,6 +128,7 @@ pub trait WakewordModelTrain {
         test_dir: String,
         learning_rate: f64,
         epochs: usize,
+        test_epochs: usize,
         mfcc_size: u16,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
@@ -132,9 +136,10 @@ pub trait WakewordModelTrain {
             m_type,
             get_files_data_map(train_dir)?,
             get_files_data_map(test_dir)?,
-            mfcc_size,
             learning_rate,
             epochs,
+            test_epochs,
+            mfcc_size,
             wakeword_model,
         )
     }
@@ -167,19 +172,21 @@ fn training_loop<M: ModelImpl + 'static>(
         // test current accuracy
         test_model(&model, &test_features, &test_labels, 0., 0)?;
     }
-    for epoch in 1..args.epochs {
+    for epoch in 1..=args.epochs {
         let logits = model.forward(&train_features)?;
         let log_sm = ops::log_softmax(&logits, D::Minus1)?;
         let loss = loss::nll(&log_sm, &train_labels)?;
         sgd.backward_step(&loss)?;
         // test progress
-        test_model(
-            &model,
-            &test_features,
-            &test_labels,
-            loss.to_scalar::<f32>()?,
-            epoch,
-        )?;
+        if (epoch % args.test_epochs) == 0 || epoch == args.epochs {
+            test_model(
+                &model,
+                &test_features,
+                &test_labels,
+                loss.to_scalar::<f32>()?,
+                epoch,
+            )?;
+        }
     }
     Ok(get_tensors_data(var_map))
 }
@@ -197,6 +204,7 @@ struct WakewordDataset {
 struct TrainingArgs {
     learning_rate: f64,
     epochs: usize,
+    test_epochs: usize,
 }
 
 fn get_files_data_map(train_dir: String) -> Result<HashMap<String, Vec<u8>>, Error> {
