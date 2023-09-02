@@ -17,7 +17,7 @@ impl SampleFormat {
         }
     }
     pub fn get_bytes_per_sample(&self) -> u16 {
-        return self.get_bits_per_sample() / 8;
+        self.get_bits_per_sample() / 8
     }
     pub fn int_of_size(bit_size: u16) -> Option<Self> {
         match bit_size {

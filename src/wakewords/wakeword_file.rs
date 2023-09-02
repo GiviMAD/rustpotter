@@ -33,11 +33,11 @@ pub trait WakewordLoad: DeserializeOwned + Sized {
             }
         };
         let reader = BufReader::new(file);
-        Ok(de::from_reader(reader).map_err(|err| err.to_string())?)
+        de::from_reader(reader).map_err(|err| err.to_string())
     }
     fn load_from_buffer(buffer: &[u8]) -> Result<Self, String> {
         let reader = BufReader::new(buffer);
-        Ok(de::from_reader(reader).map_err(|err| err.to_string())?)
+        de::from_reader(reader).map_err(|err| err.to_string())
     }
 }
 

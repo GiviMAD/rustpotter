@@ -16,5 +16,6 @@ pub use constants::{DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_
 pub use detector::{Rustpotter, RustpotterDetection};
 pub use wakewords::{
     ModelType, ModelWeights, TensorData, WakewordLoad, WakewordModel, WakewordModelTrain,
-    WakewordRef, WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles, WakewordSave,
+    WakewordModelTrainConfig, WakewordRef, WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles,
+    WakewordSave,
 };

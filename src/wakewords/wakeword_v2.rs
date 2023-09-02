@@ -15,16 +15,16 @@ pub struct WakewordV2 {
     pub enabled: bool,
 }
 impl WakewordLoad for WakewordV2 {}
-impl Into<WakewordRef> for WakewordV2 {
-    fn into(self) -> WakewordRef {
+impl From<WakewordV2> for WakewordRef {
+    fn from(val: WakewordV2) -> Self {
         WakewordRef {
-            name: self.name,
-            mfcc_size: self.samples_features.values().next().unwrap()[0].len() as u16,
-            threshold: self.threshold,
-            avg_threshold: self.avg_threshold,
-            avg_features: self.avg_features,
-            samples_features: self.samples_features,
-            rms_level: self.rms_level,
+            name: val.name,
+            mfcc_size: val.samples_features.values().next().unwrap()[0].len() as u16,
+            threshold: val.threshold,
+            avg_threshold: val.avg_threshold,
+            avg_features: val.avg_features,
+            samples_features: val.samples_features,
+            rms_level: val.rms_level,
         }
     }
 }

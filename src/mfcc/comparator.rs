@@ -17,7 +17,7 @@ impl MfccComparator {
     }
     pub fn compare(&self, a: &[&[f32]], b: &[&[f32]]) -> f32 {
         let mut dtw = Dtw::new(MfccComparator::calculate_distance);
-        let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size as u16);
+        let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size);
         let normalized_cost = cost / (a.len() + b.len()) as f32;
         self.compute_probability(normalized_cost)
     }

@@ -258,7 +258,7 @@ fn it_can_remove_wakeword_by_key() {
         .add_wakeword_from_file(wakeword_key, &wakeword_path)
         .unwrap();
     let result = detector.remove_wakeword(wakeword_key);
-    assert_eq!(result, true, "Wakeword removed");
+    assert!(result, "Wakeword removed");
 }
 
 #[test]
@@ -272,7 +272,7 @@ fn it_can_remove_all_wakewords() {
         .add_wakeword_from_file(wakeword_key, &wakeword_path)
         .unwrap();
     let result = detector.remove_wakewords();
-    assert_eq!(result, true, "Wakewords removed");
+    assert!(result, "Wakewords removed");
 }
 
 fn run_detection_with_audio_file(

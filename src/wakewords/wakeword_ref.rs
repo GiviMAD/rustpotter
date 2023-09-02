@@ -60,7 +60,7 @@ impl WakewordRef {
             avg_features,
             samples_features,
             rms_level,
-            mfcc_size: mfcc_size,
+            mfcc_size,
         })
     }
 }

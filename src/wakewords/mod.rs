@@ -7,7 +7,7 @@ mod wakeword_ref;
 mod wakeword_v2;
 
 pub use comp::{WakewordRefBuildFromBuffers, WakewordRefBuildFromFiles};
-pub use nn::WakewordModelTrain;
+pub use nn::{WakewordModelTrain, WakewordModelTrainConfig};
 pub(crate) use wakeword_detector::WakewordDetector;
 pub(crate) use wakeword_file::WakewordFile;
 pub use wakeword_file::{WakewordLoad, WakewordSave};

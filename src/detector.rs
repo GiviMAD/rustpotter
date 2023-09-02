@@ -132,7 +132,7 @@ impl Rustpotter {
             score_ref: config.detector.score_ref,
             band_size: config.detector.band_size,
             wav_encoder: reencoder,
-            vad_detector: config.detector.vad_mode.map(|m| VadDetector::new(m)),
+            vad_detector: config.detector.vad_mode.map(VadDetector::new),
             mfcc_extractor,
             band_pass_filter,
             gain_normalizer_filter,
@@ -234,7 +234,7 @@ impl Rustpotter {
             wakeword.get_detector(self.score_ref, self.band_size, self.score_mode),
         );
         self.on_wakeword_change();
-        return Ok(());
+        Ok(())
     }
     /// Update detection window and gain normalizer requirements.
     fn on_wakeword_change(&mut self) {

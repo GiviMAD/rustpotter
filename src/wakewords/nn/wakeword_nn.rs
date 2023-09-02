@@ -68,13 +68,13 @@ impl WakewordNN {
             let scores: HashMap<String, f32> = prob_vec
                 .iter()
                 .enumerate()
-                .map(|(i, prob)| (self.labels[i].clone(), prob.clone()))
+                .map(|(i, prob)| (self.labels[i].clone(), *prob))
                 .collect();
             let none_prob = scores.get(NN_NONE_LABEL).unwrap_or(&0.);
             let label_prob = scores.get(label).unwrap_or(&0.);
             let second_prob = if calc_avg_score {
                 prob_vec
-                    .into_iter()
+                    .iter()
                     .filter(|p| !label_prob.eq(*p))
                     .max_by(|a, b| b.total_cmp(a))
                     .unwrap_or(&0.)
@@ -129,7 +129,7 @@ impl WakewordNN {
         calc_avg_score: bool,
     ) -> Option<RustpotterDetection> {
         self.get_label(&prob_vec)
-            .and_then(|label| self.run_detection_by_label(&label, &prob_vec, calc_avg_score))
+            .and_then(|label| self.run_detection_by_label(label, &prob_vec, calc_avg_score))
     }
 }
 impl WakewordDetector for WakewordNN {
@@ -240,24 +240,21 @@ fn load_weights(
     model_weights: &HashMap<String, TensorData>,
 ) -> Result<(), candle_core::Error> {
     for (name, var) in var_map.data().lock().unwrap().iter_mut() {
-        let result = model_weights
+        model_weights
             .get(name)
-            .and_then(|data| Some(var.set(&data.into())))
+            .map(|data| var.set(&data.into()))
             .unwrap_or(Err(candle_core::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Incorrect model layers",
-            ))));
-        if result.is_err() {
-            return result;
-        }
+            ))))?;
     }
     Ok(())
 }
 
-impl Into<Tensor> for &TensorData {
-    fn into(self) -> Tensor {
-        let d_type = DType::from_str(&self.d_type).unwrap_or(DType::F32);
-        Tensor::from_raw_buffer(&self.bytes, d_type, &self.dims, &Device::Cpu).unwrap()
+impl From<&TensorData> for Tensor {
+    fn from(val: &TensorData) -> Self {
+        let d_type = DType::from_str(&val.d_type).unwrap_or(DType::F32);
+        Tensor::from_raw_buffer(&val.bytes, d_type, &val.dims, &Device::Cpu).unwrap()
     }
 }
 

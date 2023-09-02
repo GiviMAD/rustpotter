@@ -11,15 +11,37 @@ use std::{
     io::{BufReader, Error, ErrorKind},
 };
 
-pub trait WakewordModelTrain {
-    fn train_from_sample_buffers(
+pub struct WakewordModelTrainConfig {
+    m_type: ModelType,
+    learning_rate: f64,
+    epochs: usize,
+    test_epochs: usize,
+    mfcc_size: u16,
+}
+
+impl WakewordModelTrainConfig {
+    pub fn new(
         m_type: ModelType,
-        samples: HashMap<String, Vec<u8>>,
-        test_samples: HashMap<String, Vec<u8>>,
         learning_rate: f64,
         epochs: usize,
         test_epochs: usize,
         mfcc_size: u16,
+    ) -> Self {
+        Self {
+            m_type,
+            learning_rate,
+            epochs,
+            test_epochs,
+            mfcc_size,
+        }
+    }
+}
+
+pub trait WakewordModelTrain {
+    fn train_from_sample_buffers(
+        config: WakewordModelTrainConfig,
+        samples: HashMap<String, Vec<u8>>,
+        test_samples: HashMap<String, Vec<u8>>,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
         if samples.is_empty() {
@@ -42,11 +64,11 @@ pub trait WakewordModelTrain {
         let m_type = wakeword_model
             .as_ref()
             .map(|m| m.m_type.clone())
-            .unwrap_or(m_type);
+            .unwrap_or(config.m_type);
         let mfcc_size = wakeword_model
             .as_ref()
             .map(|m| m.mfcc_size)
-            .unwrap_or(mfcc_size);
+            .unwrap_or(config.mfcc_size);
         let mut rms_level: f32 = f32::NAN;
         let mut labeled_mfccs =
             get_mfccs_labeled(&samples, &mut labels, &mut rms_level, true, mfcc_size)?;
@@ -94,9 +116,9 @@ pub trait WakewordModelTrain {
             test_features: get_mfccs_tensor_stack(test_labeled_mfccs)?,
         };
         let training_args = TrainingArgs {
-            learning_rate,
-            epochs,
-            test_epochs,
+            learning_rate: config.learning_rate,
+            epochs: config.epochs,
+            test_epochs: config.test_epochs,
         };
         let weights = match m_type {
             ModelType::SMALL => {
@@ -123,23 +145,15 @@ pub trait WakewordModelTrain {
         })
     }
     fn train_from_sample_dirs(
-        m_type: ModelType,
+        config: WakewordModelTrainConfig,
         train_dir: String,
         test_dir: String,
-        learning_rate: f64,
-        epochs: usize,
-        test_epochs: usize,
-        mfcc_size: u16,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
         Self::train_from_sample_buffers(
-            m_type,
+            config,
             get_files_data_map(train_dir)?,
             get_files_data_map(test_dir)?,
-            learning_rate,
-            epochs,
-            test_epochs,
-            mfcc_size,
             wakeword_model,
         )
     }
@@ -170,7 +184,7 @@ fn training_loop<M: ModelImpl + 'static>(
     let test_labels = m.test_labels.to_dtype(DType::U32)?.to_device(&dev)?;
     if from_wakeword {
         // test current accuracy
-        test_model(&model, &test_features, &test_labels, 0., 0)?;
+        test_model(model.as_ref(), &test_features, &test_labels, 0., 0)?;
     }
     for epoch in 1..=args.epochs {
         let logits = model.forward(&train_features)?;
@@ -180,7 +194,7 @@ fn training_loop<M: ModelImpl + 'static>(
         // test progress
         if (epoch % args.test_epochs) == 0 || epoch == args.epochs {
             test_model(
-                &model,
+                model.as_ref(),
                 &test_features,
                 &test_labels,
                 loss.to_scalar::<f32>()?,
@@ -221,7 +235,7 @@ fn get_files_data_map(train_dir: String) -> Result<HashMap<String, Vec<u8>>, Err
 }
 
 fn test_model<S: candle_core::WithDType>(
-    model: &Box<dyn ModelImpl>,
+    model: &dyn ModelImpl,
     test_features: &Tensor,
     test_labels: &Tensor,
     loss: S,
@@ -267,12 +281,14 @@ fn get_mfccs_labeled(
     let mut labeled_data: Vec<(Vec<f32>, u32)> = Vec::new();
     for (name, buffer) in samples {
         let init_token_index = name.chars().position(|c| c == '[');
-        let end_token_index = name.chars().position(|c| c == ']');
-        let label = if init_token_index.is_some()
-            && end_token_index.is_some()
-            && init_token_index.unwrap() < end_token_index.unwrap()
+        let end_token_index = name
+            .chars()
+            .position(|c| c == ']')
+            .filter(|end| init_token_index.map(|start| start < *end).unwrap_or(false));
+        let label = if let (Some(init_token_index), Some(end_token_index)) =
+            (init_token_index, end_token_index)
         {
-            name[(init_token_index.unwrap() + 1)..end_token_index.unwrap()].to_lowercase()
+            name[init_token_index..end_token_index].to_lowercase()
         } else {
             "none".to_string()
         };
