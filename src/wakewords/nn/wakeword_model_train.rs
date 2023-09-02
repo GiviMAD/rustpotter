@@ -43,7 +43,7 @@ impl WakewordModelTrainOptions {
 
 pub trait WakewordModelTrain {
     fn train_from_buffers(
-        config: WakewordModelTrainOptions,
+        options: WakewordModelTrainOptions,
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
         wakeword_model: Option<WakewordModel>,
@@ -71,11 +71,11 @@ pub trait WakewordModelTrain {
         let m_type = wakeword_model
             .as_ref()
             .map(|m| m.m_type.clone())
-            .unwrap_or(config.m_type);
+            .unwrap_or(options.m_type);
         let mfcc_size = wakeword_model
             .as_ref()
             .map(|m| m.mfcc_size)
-            .unwrap_or(config.mfcc_size);
+            .unwrap_or(options.mfcc_size);
         let mut rms_level: f32 = f32::NAN;
         let mut labeled_mfccs = get_mfccs_labeled(
             &samples,
@@ -128,9 +128,9 @@ pub trait WakewordModelTrain {
             test_features: get_mfccs_tensor_stack(test_labeled_mfccs)?,
         };
         let training_args = TrainingArgs {
-            learning_rate: config.learning_rate,
-            epochs: config.epochs,
-            test_epochs: config.test_epochs,
+            learning_rate: options.learning_rate,
+            epochs: options.epochs,
+            test_epochs: options.test_epochs,
         };
         let weights = match m_type {
             ModelType::Tiny => training_loop::<TinyModel>(dataset, &training_args, wakeword_model)
@@ -159,13 +159,13 @@ pub trait WakewordModelTrain {
         })
     }
     fn train_from_dirs(
-        config: WakewordModelTrainOptions,
+        options: WakewordModelTrainOptions,
         train_dir: String,
         test_dir: String,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
         Self::train_from_buffers(
-            config,
+            options,
             get_files_data_map(train_dir)?,
             get_files_data_map(test_dir)?,
             wakeword_model,
