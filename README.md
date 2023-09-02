@@ -111,7 +111,7 @@ It looks like this when using a wakeword model:
 
 ```rust
 RustpotterDetection {
-    /// Detected wakeword name.
+    /// Detected label.
     name: "hey home",
     /// Inverse similarity against the seconds more probable label. (zero if disabled)
     avg_score: 0.9994159,
@@ -138,9 +138,9 @@ The following sizes are for models files trained on 1950ms of audio.
 Those are: 
 
 - Tiny: 2 linear layer network (320K).
-- Small: 2 linear layer network (768K).
-- Medium: 2 linear layer network (2.1M).
-- Large: 2 linear layer network (3.1M).
+- Small: 3 linear layer network (768K).
+- Medium: 3 linear layer network (2.1M).
+- Large: 3 linear layer network (3.1M).
 
 ## Web Demos
 
