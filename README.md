@@ -12,7 +12,7 @@ The aim of this project is to detect specific keywords in a live audio stream.
 
 Rustpotter allows two detection methods, both based on using the [mel frequency cepstral coeﬃcients (mfccs)](https://en.wikipedia.org/wiki/Mel-frequency_cepstrum) of the audio, exposed as the two kind of wakewords:
 
-- Wakeword References: When using this kind of wakeword rustpotter does the detection by measuring the similarity of live stream audio mfccs with the mfccs of the records used to build the wakeword, using the [dynamic time warping](https://en.wikipedia.org/wiki/Dynamic_time_warping) algorithm.
+- Wakeword References: When using this kind of wakeword rustpotter does the detection by measuring the similarity of live stream audio mfccs with the mfccs of the records used to build the wakeword reference, using the [dynamic time warping](https://en.wikipedia.org/wiki/Dynamic_time_warping) algorithm.
 Creating a functional wakeword reference requires 3 to 8 wav records.
 Computation increases based on the number of records used to create the wakeword reference.
 It has less accuracy than a wakeword model trained with enough data.
@@ -22,26 +22,34 @@ Training a functional wakeword model requires a training and testing sets of wav
 The size of the wakeword model is based on the model type you choose, and the audio duration it was trained on (which is defined by the max audio duration found on the training set).
 When trained with enough data, all models types offer a pretty good experience (very low missing or false detections).
 
-Rustpotter supports wav audio in any sample rate, will use only the first channel data, but only support the following sample encodings:
+## Audio Format Support
 
-- Signed int samples of 8, 16 or 32 bits.
-- Float samples of 32 bits.
+Rustpotter works internally in PCM 32bit float mono audio at 16000Hz.
+
+It handles pcm audio at any sample rate, only uses the first channel data and support following sample encodings:
+
+- PCM signed int samples of 8, 16 or 32 bits.
+- PCM float samples of 32 bits.
+
+For creating the wakeword files you can use wav records matching the supported format, the audio format is read from the wav header.
+
+On detection time the library consumes raw data, the available audio format options need to be configured correctly.
 
 ## Detection Mechanism Overview
 
-When you feed Rustpotter with a stream, it keeps a window of mfccs vectors (can be seen as a matrix of mfccs) that grows until the length needed by the loaded wakewords.
+Rustpotter process the audio data and keeps a window of mfccs vectors (can be seen as a matrix of mfccs) that grows until the length needed by the loaded wakewords.
 
-The input length requested by Rustpotter varies depending on the configured format but is constant and equivalent to 30ms of audio. Internally, it generates a vector of mfccs for each 10ms of audio. So the audio window is updated 3 times each time you call the process method.
+The input length requested by Rustpotter varies depending on the audio format, it's equivalent to 30ms of audio. Internally, it generates a vector of mfccs for each 10ms of audio, meaning the audio window is updated 3 times each time you call the process method.
 
-From the moment the window has the correct size, Rustpotter starts scoring the window on each update in order to find a successful detection (score is over the defined `threshold`).
+From the moment the window has enough size, Rustpotter starts scoring the window on each update in order to find a successful detection (score is over the defined `threshold`).
 
-A detection is considered a `partial detection` (not emitted) until n more updated are processed (half of the length of the feature window). If in this time a detection with a higher score is found, it replaces the current partial detection, and this countdown is reset.
+A detection is considered a `partial detection` (not emitted) until n more updates are processed (half of the length of the feature window). If in the meantime a detection with a higher score is found, it replaces the current partial detection, and this countdown is reset.
 
 ### The Score
 
 The score is a numeric value in range 0 - 1 that represents the accuracy of the detection.
 
-When using a wakeword model the score represents the inverse similarity between the predicted label and the prediction for the none label.
+When using a wakeword model the score represents the inverse similarity between the predicted label and the prediction for the `none` label.
 
 When using a wakeword reference the score represents the aggregated similarity against the mfccs of each of the records used on creations.
 Calculated in base to the score mode option.
@@ -61,17 +69,11 @@ You can configure how this is done using the `score_mode` option. The following 
 
 Another numeric value in range 0 - 1 calculated on detection.
 
-When using a wakeword reference the average threshold represents the similarity of the current audio mfccs against a single mfccs matrix generated by averaging the mfccs of the records used on creations. The averaged threshold can be used to reduce cpu usage as it aborts the detection then the averaged score is not surpassed.
+When using a wakeword reference the average threshold represents the similarity of the current audio mfccs against a single mfccs matrix generated by averaging the mfccs of the records used on creations. The averaged threshold can be used to reduce cpu usage as it aborts the detection when the averaged score is not enough.
 
-When using a wakeword model it the inverse similarity between the predicted label and the prediction for next matched label. It will match the score unless you are using a model trained in more that one label, so if that case it's better to set averaged threshold to 0 to disable it.
+When using a wakeword model it the inverse similarity between the predicted label and the prediction for next matched label. It will match the score unless you are using a model trained for detect more that one label.
 
 Remember you can set the `avg_threshold` config to zero to disable using this score.
-
-### Audio Filters
-
-Rustpotter includes two audio filter implementations: a `gain-normalizer filter` and a `bass-pass filter`.
-
-These filters are disabled by default, and their main purpose is to improve the detector's performance in the presence of noise.
 
 ### Partial detections
 
@@ -115,7 +117,7 @@ RustpotterDetection {
     name: "hey home",
     /// Inverse similarity against the seconds more probable label. (zero if disabled)
     avg_score: 0.9994159,
-    /// Inverse similarity against the none label probability.
+    /// Inverse similarity against the 'none' label probability.
     score: 0.9994159,
     /// Label probabilities.
     scores: {
@@ -133,7 +135,6 @@ Rustpotter exposes a reference to the current partial detection that allows read
 
 ## Model Types
 
-They used the same model names that a recognized stt.
 The following sizes are for models files trained on 1950ms of audio.
 Those are: 
 
@@ -141,6 +142,12 @@ Those are:
 - Small: 3 linear layer network (768K).
 - Medium: 3 linear layer network (2.1M).
 - Large: 3 linear layer network (3.1M).
+
+## Audio Filters
+
+Rustpotter includes two audio filter implementations: a `gain-normalizer filter` and a `bass-pass filter`.
+
+These filters are disabled by default, and their main purpose is to improve the detector's performance in the presence of noise.
 
 ## Web Demos
 
@@ -155,10 +162,10 @@ Please note that `both run entirely on your browser, your voice is not sent anyw
 
 ## Related projects
 
-* [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `shell`. (Window, macOs and Linux).
-* [rustpotter-java](https://github.com/GiviMAD/rustpotter-java): Use Rustpotter on `java`. (Mvn package and generator)
-* [rustpotter-web](https://www.npmjs.com/package/rustpotter-web): Use Rustpotter on `javascript`. (Npm package generated with [rustpotter-wasm](https://github.com/GiviMAD/rustpotter-wasm))
-* [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter as a `Web Audio API node processor`. (Recommended for `browser`)
+* [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `terminal`. (Window, macOs and Linux).
+* [rustpotter-java](https://github.com/GiviMAD/rustpotter-java): Use Rustpotter on `Java`. (Mvn package and generator)
+* [rustpotter-web](https://www.npmjs.com/package/rustpotter-web): Use Rustpotter on `JavaScript`. (Npm package generated with [rustpotter-wasm](https://github.com/GiviMAD/rustpotter-wasm))
+* [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter in the `browser` as a Web Audio API processor node.
 
 ## Changelog overview
 
