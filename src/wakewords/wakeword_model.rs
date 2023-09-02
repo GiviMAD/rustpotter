@@ -6,7 +6,7 @@ use crate::ScoreMode;
 
 use super::nn::{WakewordModelTrain, WakewordNN};
 
-use super::{WakewordSave, WakewordLoad, WakewordFile, WakewordDetector};
+use super::{WakewordDetector, WakewordFile, WakewordLoad, WakewordSave};
 #[derive(Serialize, Deserialize)]
 pub struct WakewordModel {
     pub labels: Vec<String>,
@@ -29,7 +29,7 @@ impl ModelType {
         match self {
             Self::SMALL => "small",
             Self::MEDIUM => "medium",
-            Self::LARGE => "large"
+            Self::LARGE => "large",
         }
     }
 }
@@ -41,7 +41,7 @@ impl std::str::FromStr for ModelType {
             "small" => Ok(Self::SMALL),
             "medium" => Ok(Self::MEDIUM),
             "large" => Ok(Self::LARGE),
-            _ => Err("Unknown model type". to_string()),
+            _ => Err("Unknown model type".to_string()),
         }
     }
 }

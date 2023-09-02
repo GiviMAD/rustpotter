@@ -254,7 +254,9 @@ fn it_can_remove_wakeword_by_key() {
     let wakeword_key = "test_key";
     let dir = env!("CARGO_MANIFEST_DIR");
     let wakeword_path = dir.to_owned() + "/tests/resources/trained-small.rpw";
-    detector.add_wakeword_from_file(wakeword_key, &wakeword_path).unwrap();
+    detector
+        .add_wakeword_from_file(wakeword_key, &wakeword_path)
+        .unwrap();
     let result = detector.remove_wakeword(wakeword_key);
     assert_eq!(result, true, "Wakeword removed");
 }
@@ -266,7 +268,9 @@ fn it_can_remove_all_wakewords() {
     let wakeword_key = "test_key";
     let dir = env!("CARGO_MANIFEST_DIR");
     let wakeword_path = dir.to_owned() + "/tests/resources/trained-small.rpw";
-    detector.add_wakeword_from_file(wakeword_key, &wakeword_path).unwrap();
+    detector
+        .add_wakeword_from_file(wakeword_key, &wakeword_path)
+        .unwrap();
     let result = detector.remove_wakewords();
     assert_eq!(result, true, "Wakewords removed");
 }

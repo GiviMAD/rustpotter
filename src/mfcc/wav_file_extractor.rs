@@ -6,8 +6,7 @@ use crate::{
     audio::{GainNormalizerFilter, WAVEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
-        MFCCS_EXTRACTOR_FRAME_SHIFT_MS,
-        MFCCS_EXTRACTOR_PRE_EMPHASIS,
+        MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
     Endianness, Sample, SampleFormat, WavFmt,
 };
@@ -62,9 +61,7 @@ impl MfccWavFileExtractor {
             .chunks_exact(encoder.get_output_frame_length())
             .map(|samples_chunk| mfcc_extractor.compute(samples_chunk))
             .fold(Vec::new() as Vec<Vec<f32>>, |mut acc, mfcc_matrix| {
-                mfcc_matrix
-                    .into_iter()
-                    .for_each(|mfccs| acc.push(mfccs));
+                mfcc_matrix.into_iter().for_each(|mfccs| acc.push(mfccs));
                 acc
             });
         Ok(MfccNormalizer::normalize(sample_mfccs))

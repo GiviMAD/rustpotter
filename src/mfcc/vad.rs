@@ -1,6 +1,5 @@
 use crate::config::VADMode;
 
-
 pub struct VadDetector {
     mode: VADMode,
     // state
@@ -45,7 +44,7 @@ impl VadDetector {
             index: 0,
             window: vec![f32::NAN; 50],
             voice_countdown: 0,
-            mode
+            mode,
         }
     }
 }

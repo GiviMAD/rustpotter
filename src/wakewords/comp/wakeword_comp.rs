@@ -19,11 +19,7 @@ pub(crate) struct WakewordComparator {
 }
 
 impl WakewordComparator {
-    fn cut_and_normalize_frame(
-        &self,
-        mut mfccs: Vec<Vec<f32>>,
-        max_len: usize,
-    ) -> Vec<Vec<f32>> {
+    fn cut_and_normalize_frame(&self, mut mfccs: Vec<Vec<f32>>, max_len: usize) -> Vec<Vec<f32>> {
         if mfccs.len() > max_len {
             mfccs.drain(max_len..mfccs.len());
         }

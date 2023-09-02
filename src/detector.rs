@@ -187,7 +187,7 @@ impl Rustpotter {
             })
     }
     /// Remove wakeword by key.
-    /// 
+    ///
     /// Returns true on success.
     pub fn remove_wakeword(&mut self, key: &str) -> bool {
         let len = self.wakewords.len();
@@ -200,7 +200,7 @@ impl Rustpotter {
         }
     }
     /// Remove all wakewords.
-    /// 
+    ///
     /// Returns true on success.
     pub fn remove_wakewords(&mut self) -> bool {
         let len = self.wakewords.len();

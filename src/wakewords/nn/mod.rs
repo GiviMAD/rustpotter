@@ -1,5 +1,5 @@
-mod wakeword_nn;
 mod wakeword_model_train;
+mod wakeword_nn;
 
-pub(crate) use wakeword_nn::WakewordNN;
 pub use wakeword_model_train::WakewordModelTrain;
+pub(crate) use wakeword_nn::WakewordNN;

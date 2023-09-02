@@ -1,6 +1,6 @@
 use rubato::{FftFixedInOut, Resampler};
 
-use crate::{config::WavFmt, Sample, Endianness, SampleFormat};
+use crate::{config::WavFmt, Endianness, Sample, SampleFormat};
 
 /**
  * Encode and convert to wav samples in internal rustpotter format

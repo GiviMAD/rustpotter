@@ -69,7 +69,7 @@ pub trait WakewordRefBuildFromFiles {
                 MfccWavFileExtractor::compute_mfccs(
                     BufReader::new(file),
                     &mut sample_rms_level,
-                    mfcc_size
+                    mfcc_size,
                 )?,
             );
             rms_levels.push(sample_rms_level);
