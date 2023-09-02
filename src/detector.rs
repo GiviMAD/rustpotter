@@ -19,7 +19,7 @@ use crate::{
 /// // ...
 /// let mut rustpotter = Rustpotter::new(&rustpotter_config).unwrap();
 /// // load and enable a wakeword
-/// rustpotter.add_wakeword_from_file("./tests/resources/oye_casa_g.rpw").unwrap();
+/// rustpotter.add_wakeword_from_file("wakeword_key", "./tests/resources/oye_casa_g.rpw").unwrap();
 /// // You need a buffer of size rustpotter.get_samples_per_frame() when using samples or rustpotter.get_bytes_per_frame() when using bytes.  
 /// let mut sample_buffer: Vec<i16> = vec![0; rustpotter.get_samples_per_frame()];
 /// // while true { Iterate forever
