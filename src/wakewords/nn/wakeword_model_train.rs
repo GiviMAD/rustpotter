@@ -1,8 +1,12 @@
 use super::wakeword_nn::{
-    flat_features, get_tensors_data, init_model_impl, LargeModel, MediumModel, ModelImpl,
-    SmallModel,
+    flat_features, get_tensors_data, init_model_impl, LargeModel, MediumModel, ModelImpl, TinyModel,
 };
-use crate::{mfcc::MfccWavFileExtractor, wakewords::ModelWeights, ModelType, WakewordModel};
+use crate::{
+    constants::NN_NONE_LABEL,
+    mfcc::MfccWavFileExtractor,
+    wakewords::{nn::wakeword_nn::SmallModel, ModelWeights},
+    ModelType, WakewordModel,
+};
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::{loss, ops, VarMap};
 use std::{
@@ -11,7 +15,7 @@ use std::{
     io::{BufReader, Error, ErrorKind},
 };
 
-pub struct WakewordModelTrainConfig {
+pub struct WakewordModelTrainOptions {
     m_type: ModelType,
     learning_rate: f64,
     epochs: usize,
@@ -19,7 +23,7 @@ pub struct WakewordModelTrainConfig {
     mfcc_size: u16,
 }
 
-impl WakewordModelTrainConfig {
+impl WakewordModelTrainOptions {
     pub fn new(
         m_type: ModelType,
         learning_rate: f64,
@@ -38,8 +42,8 @@ impl WakewordModelTrainConfig {
 }
 
 pub trait WakewordModelTrain {
-    fn train_from_sample_buffers(
-        config: WakewordModelTrainConfig,
+    fn train_from_buffers(
+        config: WakewordModelTrainOptions,
         samples: HashMap<String, Vec<u8>>,
         test_samples: HashMap<String, Vec<u8>>,
         wakeword_model: Option<WakewordModel>,
@@ -57,6 +61,9 @@ pub trait WakewordModelTrain {
             ));
         }
         // prepare data
+        if wakeword_model.is_some() {
+            println!("Training from previous model, some options will be ignored.");
+        }
         let mut labels: Vec<String> = wakeword_model
             .as_ref()
             .map(|m| m.labels.clone())
@@ -70,8 +77,13 @@ pub trait WakewordModelTrain {
             .map(|m| m.mfcc_size)
             .unwrap_or(config.mfcc_size);
         let mut rms_level: f32 = f32::NAN;
-        let mut labeled_mfccs =
-            get_mfccs_labeled(&samples, &mut labels, &mut rms_level, true, mfcc_size)?;
+        let mut labeled_mfccs = get_mfccs_labeled(
+            &samples,
+            &mut labels,
+            &mut rms_level,
+            wakeword_model.is_none(),
+            mfcc_size,
+        )?;
         let mut noop_rms_level: f32 = f32::NAN;
         let mut test_labeled_mfccs = get_mfccs_labeled(
             &test_samples,
@@ -80,10 +92,10 @@ pub trait WakewordModelTrain {
             false,
             mfcc_size,
         )?;
-        println!("Train samples {}.", labeled_mfccs.len());
-        println!("Test samples {}.", test_labeled_mfccs.len());
-        println!("Labels: {:?}.", labels);
         println!("Model type: {}.", m_type.as_str());
+        println!("Labels: {:?}.", labels);
+        println!("Training with {} records.", labeled_mfccs.len());
+        println!("Testing with {} records.", test_labeled_mfccs.len());
         // validate labels
         if labels.len() < 2 {
             return Err(std::io::Error::new(
@@ -121,15 +133,17 @@ pub trait WakewordModelTrain {
             test_epochs: config.test_epochs,
         };
         let weights = match m_type {
-            ModelType::SMALL => {
+            ModelType::Tiny => training_loop::<TinyModel>(dataset, &training_args, wakeword_model)
+                .map_err(convert_error)?,
+            ModelType::Small => {
                 training_loop::<SmallModel>(dataset, &training_args, wakeword_model)
                     .map_err(convert_error)?
             }
-            ModelType::MEDIUM => {
+            ModelType::Medium => {
                 training_loop::<MediumModel>(dataset, &training_args, wakeword_model)
                     .map_err(convert_error)?
             }
-            ModelType::LARGE => {
+            ModelType::Large => {
                 training_loop::<LargeModel>(dataset, &training_args, wakeword_model)
                     .map_err(convert_error)?
             }
@@ -144,13 +158,13 @@ pub trait WakewordModelTrain {
             rms_level,
         })
     }
-    fn train_from_sample_dirs(
-        config: WakewordModelTrainConfig,
+    fn train_from_dirs(
+        config: WakewordModelTrainOptions,
         train_dir: String,
         test_dir: String,
         wakeword_model: Option<WakewordModel>,
     ) -> Result<WakewordModel, Error> {
-        Self::train_from_sample_buffers(
+        Self::train_from_buffers(
             config,
             get_files_data_map(train_dir)?,
             get_files_data_map(test_dir)?,
@@ -288,9 +302,9 @@ fn get_mfccs_labeled(
         let label = if let (Some(init_token_index), Some(end_token_index)) =
             (init_token_index, end_token_index)
         {
-            name[init_token_index..end_token_index].to_lowercase()
+            name[init_token_index + 1..end_token_index].to_lowercase()
         } else {
-            "none".to_string()
+            NN_NONE_LABEL.to_string()
         };
         if !labels.contains(&label) {
             if new_labels {
@@ -298,20 +312,24 @@ fn get_mfccs_labeled(
             } else {
                 return Err(Error::new(
                     ErrorKind::Other,
-                    format!("Label '{}' do not exists on training data", label),
+                    format!("Forbidden label '{}', it doesn't exists on the training data or in the model you are training from.", label),
                 ));
             }
         }
         let label_index = labels.iter().position(|r| r.eq(&label)).unwrap() as u32;
         let mut tmp_sample_rms_level: f32 = 0.;
-        let mfccs = MfccWavFileExtractor::compute_mfccs(
+        let mfccs: Vec<Vec<f32>> = MfccWavFileExtractor::compute_mfccs(
             BufReader::new(buffer.as_slice()),
             &mut tmp_sample_rms_level,
             mfcc_size,
         )
         .map_err(|msg| Error::new(ErrorKind::Other, msg))?;
-        if sample_rms_level.is_nan() {
-            *sample_rms_level = (*sample_rms_level + tmp_sample_rms_level) / 2.;
+        if !label.eq(NN_NONE_LABEL) {
+            if !sample_rms_level.is_nan() {
+                *sample_rms_level = (*sample_rms_level + tmp_sample_rms_level) / 2.;
+            } else {
+                *sample_rms_level = tmp_sample_rms_level;
+            }
         }
         let flatten_mfccs = flat_features(mfccs);
         labeled_data.push((flatten_mfccs, label_index));

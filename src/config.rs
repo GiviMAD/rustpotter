@@ -94,6 +94,40 @@ pub enum ScoreMode {
     P90,
     P95,
 }
+#[cfg(feature = "display")]
+impl std::fmt::Display for ScoreMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            ScoreMode::Average => write!(f, "average"),
+            ScoreMode::Max => write!(f, "max"),
+            ScoreMode::Median => write!(f, "median"),
+            ScoreMode::P25 => write!(f, "p25"),
+            ScoreMode::P50 => write!(f, "p50"),
+            ScoreMode::P75 => write!(f, "p75"),
+            ScoreMode::P80 => write!(f, "p80"),
+            ScoreMode::P90 => write!(f, "p90"),
+            ScoreMode::P95 => write!(f, "p95"),
+        }
+    }
+}
+#[cfg(feature = "display")]
+impl std::str::FromStr for ScoreMode {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "average" => Ok(Self::Average),
+            "max" => Ok(Self::Max),
+            "median" => Ok(Self::Median),
+            "p25" => Ok(Self::P25),
+            "p50" => Ok(Self::P50),
+            "p75" => Ok(Self::P75),
+            "p80" => Ok(Self::P80),
+            "p90" => Ok(Self::P90),
+            "p95" => Ok(Self::P95),
+            _ => Err("Unknown score mode".to_string()),
+        }
+    }
+}
 /// Configures VAD detector sensibility.
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy)]
@@ -102,13 +136,34 @@ pub enum VADMode {
     Medium,
     Hard,
 }
-
 impl VADMode {
     pub(crate) fn get_value(&self) -> f32 {
         match &self {
             VADMode::Easy => 7.5,
             VADMode::Medium => 10.,
             VADMode::Hard => 12.5,
+        }
+    }
+}
+#[cfg(feature = "display")]
+impl std::fmt::Display for VADMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            VADMode::Easy => write!(f, "easy"),
+            VADMode::Medium => write!(f, "medium"),
+            VADMode::Hard => write!(f, "hard"),
+        }
+    }
+}
+#[cfg(feature = "display")]
+impl std::str::FromStr for VADMode {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "easy" => Ok(Self::Easy),
+            "medium" => Ok(Self::Medium),
+            "hard" => Ok(Self::Hard),
+            _ => Err("Unknown vad mode".to_string()),
         }
     }
 }

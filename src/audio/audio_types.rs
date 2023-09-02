@@ -1,4 +1,4 @@
-// Indicates the sample format type and size
+/// Indicates the sample format type and size
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone)]
 pub enum SampleFormat {
@@ -34,6 +34,17 @@ impl SampleFormat {
         }
     }
 }
+#[cfg(feature = "display")]
+impl std::fmt::Display for SampleFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            SampleFormat::I8 => write!(f, "i8"),
+            SampleFormat::I16 => write!(f, "i16"),
+            SampleFormat::I32 => write!(f, "i32"),
+            SampleFormat::F32 => write!(f, "f32"),
+        }
+    }
+}
 
 /// Indicates the sample byte order in the audio byte stream
 #[cfg_attr(feature = "debug", derive(Debug))]
@@ -45,7 +56,7 @@ pub enum Endianness {
 }
 
 /// Trait for compatible sample number types
-pub trait Sample: Sized + Copy + std::cmp::PartialOrd + std::fmt::Display + 'static + Send {
+pub trait Sample: Sized + Copy + std::cmp::PartialOrd + 'static + Send {
     const S_TYPE: SampleFormat;
     fn get_byte_size() -> usize;
     fn get_format() -> SampleFormat;

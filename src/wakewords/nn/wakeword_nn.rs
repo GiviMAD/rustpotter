@@ -173,7 +173,7 @@ pub(crate) fn init_model(
     wakeword: Option<&WakewordModel>,
 ) -> Result<Box<dyn ModelImpl>, candle_core::Error> {
     match m_type {
-        ModelType::SMALL => init_model_impl::<SmallModel>(
+        ModelType::Tiny => init_model_impl::<TinyModel>(
             var_map,
             dev,
             features_size,
@@ -181,7 +181,7 @@ pub(crate) fn init_model(
             labels_size,
             wakeword,
         ),
-        ModelType::MEDIUM => init_model_impl::<MediumModel>(
+        ModelType::Small => init_model_impl::<SmallModel>(
             var_map,
             dev,
             features_size,
@@ -189,7 +189,15 @@ pub(crate) fn init_model(
             labels_size,
             wakeword,
         ),
-        ModelType::LARGE => init_model_impl::<LargeModel>(
+        ModelType::Medium => init_model_impl::<MediumModel>(
+            var_map,
+            dev,
+            features_size,
+            mfcc_size,
+            labels_size,
+            wakeword,
+        ),
+        ModelType::Large => init_model_impl::<LargeModel>(
             var_map,
             dev,
             features_size,
@@ -277,6 +285,11 @@ pub(super) struct MediumModel {
 pub(super) struct SmallModel {
     ln1: Linear,
     ln2: Linear,
+    ln3: Linear,
+}
+pub(super) struct TinyModel {
+    ln1: Linear,
+    ln2: Linear,
 }
 pub(crate) trait ModelImpl: Send {
     fn new(
@@ -290,14 +303,14 @@ pub(crate) trait ModelImpl: Send {
     fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor>;
 }
 
-impl ModelImpl for SmallModel {
+impl ModelImpl for TinyModel {
     fn new(
         vs: VarBuilder,
         input_size: usize,
         mfcc_size: usize,
         labels_size: usize,
     ) -> candle_core::Result<Self> {
-        let inter_size = (input_size / mfcc_size) / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
+        let inter_size = (input_size / mfcc_size) / (MFCCS_EXTRACTOR_OUT_SHIFTS * 5);
         let ln1 = candle_nn::linear(input_size, inter_size, vs.pp("ln1"))?;
         let ln2 = candle_nn::linear(inter_size, labels_size, vs.pp("ln2"))?;
         Ok(Self { ln1, ln2 })
@@ -307,6 +320,28 @@ impl ModelImpl for SmallModel {
         let xs = self.ln1.forward(xs)?;
         let xs = xs.relu()?;
         self.ln2.forward(&xs)
+    }
+}
+
+impl ModelImpl for SmallModel {
+    fn new(
+        vs: VarBuilder,
+        input_size: usize,
+        mfcc_size: usize,
+        labels_size: usize,
+    ) -> candle_core::Result<Self> {
+        let inter_size1 = (input_size / mfcc_size) / (MFCCS_EXTRACTOR_OUT_SHIFTS * 2);
+        let ln1 = candle_nn::linear(input_size, inter_size1, vs.pp("ln1"))?;
+        let inter_size2 = inter_size1 / 2;
+        let ln2: Linear = candle_nn::linear(inter_size1, inter_size2, vs.pp("ln2"))?;
+        let ln3: Linear = candle_nn::linear(inter_size2, labels_size, vs.pp("ln3"))?;
+        Ok(Self { ln1, ln2, ln3 })
+    }
+
+    fn forward(&self, xs: &Tensor) -> candle_core::Result<Tensor> {
+        let xs = self.ln1.forward(xs)?.relu()?;
+        let xs = self.ln2.forward(&xs)?.relu()?;
+        self.ln3.forward(&xs)
     }
 }
 

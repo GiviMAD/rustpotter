@@ -219,15 +219,15 @@ fn it_can_detect_wakewords_using_trained_model() {
     config.detector.avg_threshold = 0.;
     let detected_wakewords = run_detection_with_audio_file(
         config,
-        "/tests/resources/trained-small.rpw",
+        "/tests/resources/ok_casa-tiny.rpw",
         "/tests/resources/ok_casa.wav",
     );
     assert_eq!(detected_wakewords.len(), 1);
-    assert_eq!(detected_wakewords[0].counter, 43);
+    assert_eq!(detected_wakewords[0].counter, 34);
     assert_eq!(detected_wakewords[0].avg_score, 0.);
-    assert_eq!(detected_wakewords[0].score, 0.9999992);
-    assert_eq!(detected_wakewords[0].scores["ok_casa"], 26.525837);
-    assert_eq!(detected_wakewords[0].scores["none"], -6.555033);
+    assert_eq!(detected_wakewords[0].score, 0.9997649);
+    assert_eq!(detected_wakewords[0].scores["ok_casa"], 3.7506533);
+    assert_eq!(detected_wakewords[0].scores["none"], -16.83091);
 }
 
 #[test]
@@ -236,15 +236,15 @@ fn it_can_detect_wakewords_using_trained_model_and_avg_score() {
     config.detector.avg_threshold = 0.5;
     let detected_wakewords = run_detection_with_audio_file(
         config,
-        "/tests/resources/trained-small.rpw",
+        "/tests/resources/ok_casa-tiny.rpw",
         "/tests/resources/ok_casa.wav",
     );
     assert_eq!(detected_wakewords.len(), 1);
-    assert_eq!(detected_wakewords[0].counter, 43);
-    assert_eq!(detected_wakewords[0].avg_score, 0.9999992);
-    assert_eq!(detected_wakewords[0].score, 0.9999992);
-    assert_eq!(detected_wakewords[0].scores["ok_casa"], 26.525837);
-    assert_eq!(detected_wakewords[0].scores["none"], -6.555033);
+    assert_eq!(detected_wakewords[0].counter, 34);
+    assert_eq!(detected_wakewords[0].avg_score, 0.9997649);
+    assert_eq!(detected_wakewords[0].score, 0.9997649);
+    assert_eq!(detected_wakewords[0].scores["ok_casa"], 3.7506533);
+    assert_eq!(detected_wakewords[0].scores["none"], -16.83091);
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn it_can_remove_wakeword_by_key() {
     let mut detector = Rustpotter::new(&config).unwrap();
     let wakeword_key = "test_key";
     let dir = env!("CARGO_MANIFEST_DIR");
-    let wakeword_path = dir.to_owned() + "/tests/resources/trained-small.rpw";
+    let wakeword_path = dir.to_owned() + "/tests/resources/ok_casa-tiny.rpw";
     detector
         .add_wakeword_from_file(wakeword_key, &wakeword_path)
         .unwrap();
@@ -267,7 +267,7 @@ fn it_can_remove_all_wakewords() {
     let mut detector = Rustpotter::new(&config).unwrap();
     let wakeword_key = "test_key";
     let dir = env!("CARGO_MANIFEST_DIR");
-    let wakeword_path = dir.to_owned() + "/tests/resources/trained-small.rpw";
+    let wakeword_path = dir.to_owned() + "/tests/resources/ok_casa-tiny.rpw";
     detector
         .add_wakeword_from_file(wakeword_key, &wakeword_path)
         .unwrap();

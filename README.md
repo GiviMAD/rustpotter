@@ -131,6 +131,17 @@ RustpotterDetection {
 
 Rustpotter exposes a reference to the current partial detection that allows read access to it for debugging purposes.
 
+## Model Types
+
+They used the same model names that a recognized stt.
+The following sizes are for models files trained on 1950ms of audio.
+Those are: 
+
+- Tiny: 2 linear layer network (320K).
+- Small: 2 linear layer network (768K).
+- Medium: 2 linear layer network (2.1M).
+- Large: 2 linear layer network (3.1M).
+
 ## Web Demos
 
  The [spot demo](https://givimad.github.io/rustpotter-worklet-demo/) is available so you can quickly try out Rustpotter using a web browser.
@@ -200,7 +211,7 @@ This project started as a port of the project [node-personal-wakeword](https://g
 
 The motivation behind this project is to learn about audio analysis and the Rust language/ecosystem.
 
-As such, this is not intended to be a production-grade tool, but with a well trained wakeword model it achieves the quality expected from one.
+As such, this is not intended to be a production-grade tool, but with a well trained wakeword model it achieves the quality expected.
 
 ## Contributing
 
