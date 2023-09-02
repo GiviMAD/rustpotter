@@ -247,6 +247,30 @@ fn it_can_detect_wakewords_using_trained_model_and_avg_score() {
     assert_eq!(detected_wakewords[0].scores["none"], -6.555033);
 }
 
+#[test]
+fn it_can_remove_wakeword_by_key() {
+    let config = RustpotterConfig::default();
+    let mut detector = Rustpotter::new(&config).unwrap();
+    let wakeword_key = "test_key";
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let wakeword_path = dir.to_owned() + "/tests/resources/trained-small.rpw";
+    detector.add_wakeword_from_file(wakeword_key, &wakeword_path).unwrap();
+    let result = detector.remove_wakeword(wakeword_key);
+    assert_eq!(result, true, "Wakeword removed");
+}
+
+#[test]
+fn it_can_remove_all_wakewords() {
+    let config = RustpotterConfig::default();
+    let mut detector = Rustpotter::new(&config).unwrap();
+    let wakeword_key = "test_key";
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let wakeword_path = dir.to_owned() + "/tests/resources/trained-small.rpw";
+    detector.add_wakeword_from_file(wakeword_key, &wakeword_path).unwrap();
+    let result = detector.remove_wakewords();
+    assert_eq!(result, true, "Wakewords removed");
+}
+
 fn run_detection_with_audio_file(
     mut config: RustpotterConfig,
     model_path: &str,
@@ -259,7 +283,9 @@ fn run_detection_with_audio_file(
     config.fmt = wav_spec;
     let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + model_path;
-    rustpotter.add_wakeword_from_file(&model_path).unwrap();
+    rustpotter
+        .add_wakeword_from_file("wakeword", &model_path)
+        .unwrap();
     let mut audio_samples = wav_reader
         .into_samples::<f32>()
         .map(|chunk| *chunk.as_ref().unwrap())
@@ -297,7 +323,9 @@ fn run_detection_simulation_with_gains(
     config.fmt.channels = 1;
     let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + model_path;
-    rustpotter.add_wakeword_from_file(&model_path).unwrap();
+    rustpotter
+        .add_wakeword_from_file("wakeword", &model_path)
+        .unwrap();
     let sample_1_path = dir.to_owned() + "/tests/resources/oye_casa_g_1.wav";
     let sample_2_path = dir.to_owned() + "/tests/resources/oye_casa_g_2.wav";
     let live_audio_simulation = get_audio_with_two_wakewords_with_gain(

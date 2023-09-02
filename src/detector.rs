@@ -57,7 +57,7 @@ pub struct Rustpotter {
     gain_normalizer_filter: Option<GainNormalizerFilter>,
     // State
     /// The collection of active wakewords detectors.
-    wakewords: Vec<Box<dyn WakewordDetector>>,
+    wakewords: HashMap<String, Box<dyn WakewordDetector>>,
     /// Indicates that the audio_mfcc_window has enough mfcc frames to run the detection.
     /// This means its length is greater or equal to the max_mfcc_frames value.
     buffering: bool,
@@ -139,7 +139,7 @@ impl Rustpotter {
             audio_mfcc_window: Vec::new(),
             buffering: true,
             max_mfcc_frames: 0,
-            wakewords: Vec::new(),
+            wakewords: HashMap::new(),
             partial_detection: None,
             detection_countdown: 0,
             rms_level: 0.,
@@ -153,43 +153,45 @@ impl Rustpotter {
         })
     }
     /// Add wakeword ref to the detector.
-    pub fn add_wakeword_ref(&mut self, wakeword: WakewordRef) -> Result<(), String> {
-        self.add_wakeword(wakeword)
+    pub fn add_wakeword_ref(&mut self, key: &str, wakeword: WakewordRef) -> Result<(), String> {
+        self.add_wakeword(key, wakeword)
     }
     /// Add wakeword model to the detector.
-    pub fn add_wakeword_model(&mut self, wakeword: WakewordModel) -> Result<(), String> {
-        self.add_wakeword(wakeword)
+    pub fn add_wakeword_model(&mut self, key: &str, wakeword: WakewordModel) -> Result<(), String> {
+        self.add_wakeword(key, wakeword)
     }
     /// Add wakeword from file bytes.
-    pub fn add_wakeword_from_buffer(&mut self, buffer: &[u8]) -> Result<(), String> {
+    pub fn add_wakeword_from_buffer(&mut self, key: &str, buffer: &[u8]) -> Result<(), String> {
         WakewordV2::load_from_buffer(buffer)
-            .and_then(|w| self.add_wakeword_ref(w.into()))
+            .and_then(|w| self.add_wakeword_ref(key, w.into()))
             .or_else(|_| {
                 WakewordRef::load_from_buffer(buffer)
-                    .and_then(|wakeword| self.add_wakeword_ref(wakeword))
+                    .and_then(|wakeword| self.add_wakeword_ref(key, wakeword))
                     .or_else(|_| {
                         WakewordModel::load_from_buffer(buffer)
-                            .and_then(|wakeword| self.add_wakeword_model(wakeword))
+                            .and_then(|wakeword| self.add_wakeword_model(key, wakeword))
                     })
             })
     }
     /// Add wakeword from file path.
-    pub fn add_wakeword_from_file(&mut self, path: &str) -> Result<(), String> {
+    pub fn add_wakeword_from_file(&mut self, key: &str, path: &str) -> Result<(), String> {
         WakewordV2::load_from_file(path)
-            .and_then(|w| self.add_wakeword_ref(w.into()))
+            .and_then(|w| self.add_wakeword_ref(key, w.into()))
             .or_else(|_| {
                 WakewordRef::load_from_file(path)
-                    .and_then(|wakeword| self.add_wakeword_ref(wakeword))
+                    .and_then(|wakeword| self.add_wakeword_ref(key, wakeword))
                     .or_else(|_| {
                         WakewordModel::load_from_file(path)
-                            .and_then(|wakeword| self.add_wakeword_model(wakeword))
+                            .and_then(|wakeword| self.add_wakeword_model(key, wakeword))
                     })
             })
     }
-    /// Remove wakeword by name or label.
-    pub fn remove_wakeword(&mut self, name: &str) -> bool {
+    /// Remove wakeword by key.
+    /// 
+    /// Returns true on success.
+    pub fn remove_wakeword(&mut self, key: &str) -> bool {
         let len = self.wakewords.len();
-        self.wakewords.retain(|w| !w.contains(name));
+        self.wakewords.retain(|k, _| !k.eq(key));
         if len != self.wakewords.len() {
             self.on_wakeword_change();
             true
@@ -197,13 +199,26 @@ impl Rustpotter {
             false
         }
     }
-    fn add_wakeword<T: WakewordFile>(&mut self, wakeword: T) -> Result<(), String> {
+    /// Remove all wakewords.
+    /// 
+    /// Returns true on success.
+    pub fn remove_wakewords(&mut self) -> bool {
+        let len = self.wakewords.len();
+        self.wakewords.clear();
+        if len != self.wakewords.len() {
+            self.on_wakeword_change();
+            true
+        } else {
+            false
+        }
+    }
+    fn add_wakeword<T: WakewordFile>(&mut self, name: &str, wakeword: T) -> Result<(), String> {
         if self.wakewords.is_empty() {
             self.reset();
             self.mfcc_extractor.set_out_size(wakeword.get_mfcc_size());
         } else if !self
             .wakewords
-            .iter()
+            .values()
             .next()
             .unwrap()
             .get_mfcc_size()
@@ -214,8 +229,10 @@ impl Rustpotter {
                     .to_string(),
             );
         }
-        self.wakewords
-            .push(wakeword.get_detector(self.score_ref, self.band_size, self.score_mode));
+        self.wakewords.insert(
+            name.to_string(),
+            wakeword.get_detector(self.score_ref, self.band_size, self.score_mode),
+        );
         self.on_wakeword_change();
         return Ok(());
     }
@@ -223,7 +240,7 @@ impl Rustpotter {
     fn on_wakeword_change(&mut self) {
         let mut max_mfcc_frames = usize::MIN;
         let mut target_rms_level = f32::NAN;
-        for wakeword in self.wakewords.iter() {
+        for wakeword in self.wakewords.values() {
             max_mfcc_frames = wakeword.as_ref().get_mfcc_frame_size().max(max_mfcc_frames);
             target_rms_level = wakeword.get_rms_level().max(target_rms_level);
         }
@@ -386,7 +403,7 @@ impl Rustpotter {
     fn run_wakeword_detectors(&mut self) -> Option<RustpotterDetection> {
         let mut wakeword_detections = self
             .wakewords
-            .iter()
+            .values()
             .filter_map(|wakeword| {
                 wakeword.run_detection(
                     self.audio_mfcc_window.clone(),
