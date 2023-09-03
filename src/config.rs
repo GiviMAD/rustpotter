@@ -7,7 +7,7 @@ use crate::{
 };
 /// Wav format representation
 #[cfg_attr(feature = "debug", derive(Debug))]
-pub struct WavFmt {
+pub struct AudioFmt {
     /// Indicates the sample rate of the input audio stream.
     pub sample_rate: usize,
     /// Indicates the sample type and its bit size. It's only used when the audio is provided as bytes.
@@ -17,9 +17,9 @@ pub struct WavFmt {
     /// Input the sample endianness used to encode the input audio stream bytes.
     pub endianness: Endianness,
 }
-impl Default for WavFmt {
-    fn default() -> WavFmt {
-        WavFmt {
+impl Default for AudioFmt {
+    fn default() -> AudioFmt {
+        AudioFmt {
             sample_rate: DETECTOR_INTERNAL_SAMPLE_RATE,
             sample_format: SampleFormat::F32,
             channels: 1,
@@ -211,7 +211,7 @@ impl Default for DetectorConfig {
 #[derive(Default)]
 pub struct RustpotterConfig {
     /// configures expected wav input format.
-    pub fmt: WavFmt,
+    pub fmt: AudioFmt,
     /// Configures detection.
     pub detector: DetectorConfig,
     /// Configures input audio filters.

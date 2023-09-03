@@ -301,7 +301,7 @@ fn run_detection_with_audio_file(
     let dir = env!("CARGO_MANIFEST_DIR");
     let audio_file = std::fs::File::open(dir.to_owned() + audio_path).unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(audio_file)).unwrap();
-    let wav_spec: rustpotter::WavFmt = wav_reader.spec().try_into().unwrap();
+    let wav_spec: rustpotter::AudioFmt = wav_reader.spec().try_into().unwrap();
     config.fmt = wav_spec;
     let mut rustpotter = Rustpotter::new(&config).unwrap();
     let model_path = dir.to_owned() + model_path;

@@ -1,3 +1,5 @@
+use crate::GainNormalizationConfig;
+
 pub struct GainNormalizerFilter {
     window_size: usize,
     fixed_rms_level: bool,
@@ -51,8 +53,8 @@ impl GainNormalizerFilter {
         }
         (sum_squared / signal.len() as f32).sqrt()
     }
-    pub fn new(min_gain: f32, max_gain: f32, fixed_rms_level: Option<f32>) -> GainNormalizerFilter {
-        GainNormalizerFilter {
+    pub fn new(min_gain: f32, max_gain: f32, fixed_rms_level: Option<f32>) -> Self {
+        Self {
             min_gain,
             max_gain,
             rms_level_ref: fixed_rms_level.unwrap_or(f32::NAN),
@@ -63,7 +65,19 @@ impl GainNormalizerFilter {
         }
     }
 }
-
+impl From<&GainNormalizationConfig> for Option<GainNormalizerFilter> {
+    fn from(config: &GainNormalizationConfig) -> Self {
+        if config.enabled {
+            Some(GainNormalizerFilter::new(
+                config.min_gain,
+                config.max_gain,
+                config.gain_ref,
+            ))
+        } else {
+            None
+        }
+    }
+}
 #[test]
 fn filter_audio() {
     let dir = env!("CARGO_MANIFEST_DIR");

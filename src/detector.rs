@@ -8,7 +8,8 @@ use crate::{
     },
     mfcc::{MfccExtractor, VadDetector},
     wakewords::{WakewordDetector, WakewordFile, WakewordV2},
-    RustpotterConfig, Sample, ScoreMode, WakewordLoad, WakewordModel, WakewordRef,
+    DetectorConfig, FiltersConfig, RustpotterConfig, Sample, ScoreMode, WakewordLoad,
+    WakewordModel, WakewordRef,
 };
 /// Rustpotter is an open source wakeword spotter forged in rust
 /// ```
@@ -108,24 +109,8 @@ impl Rustpotter {
             0, // setup on wakeword added
             MFCCS_EXTRACTOR_PRE_EMPHASIS,
         );
-        let band_pass_filter = if config.filters.band_pass.enabled {
-            Some(BandPassFilter::new(
-                DETECTOR_INTERNAL_SAMPLE_RATE as f32,
-                config.filters.band_pass.low_cutoff,
-                config.filters.band_pass.high_cutoff,
-            ))
-        } else {
-            None
-        };
-        let gain_normalizer_filter = if config.filters.gain_normalizer.enabled {
-            Some(GainNormalizerFilter::new(
-                config.filters.gain_normalizer.min_gain,
-                config.filters.gain_normalizer.max_gain,
-                config.filters.gain_normalizer.gain_ref,
-            ))
-        } else {
-            None
-        };
+        let gain_normalizer_filter = (&config.filters.gain_normalizer).into();
+        let band_pass_filter = (&config.filters.band_pass).into();
         Ok(Rustpotter {
             avg_threshold: config.detector.avg_threshold,
             threshold: config.detector.threshold,
@@ -215,51 +200,6 @@ impl Rustpotter {
             false
         }
     }
-    fn add_wakeword<T: WakewordFile>(&mut self, name: &str, wakeword: T) -> Result<(), String> {
-        if self.wakewords.is_empty() {
-            self.reset();
-            self.mfcc_extractor.set_out_size(wakeword.get_mfcc_size());
-        } else if !self
-            .wakewords
-            .values()
-            .next()
-            .unwrap()
-            .get_mfcc_size()
-            .eq(&wakeword.get_mfcc_size())
-        {
-            return Err(
-                "Usage of wakewords with different mfcc size is not supported, ignoring wakeword"
-                    .to_string(),
-            );
-        }
-        self.wakewords.insert(
-            name.to_string(),
-            wakeword.get_detector(self.score_ref, self.band_size, self.score_mode),
-        );
-        self.on_wakeword_change();
-        Ok(())
-    }
-    /// Update detection window and gain normalizer requirements.
-    fn on_wakeword_change(&mut self) {
-        let mut max_mfcc_frames = usize::MIN;
-        let mut target_rms_level = f32::NAN;
-        for wakeword in self.wakewords.values() {
-            max_mfcc_frames = wakeword.as_ref().get_mfcc_frame_size().max(max_mfcc_frames);
-            target_rms_level = wakeword.get_rms_level().max(target_rms_level);
-        }
-        self.max_mfcc_frames = max_mfcc_frames;
-        if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
-            gain_normalizer_filter.set_rms_level_ref(target_rms_level, self.max_mfcc_frames / 3);
-        }
-        self.buffering = self.audio_mfcc_window.len() < self.max_mfcc_frames;
-        #[cfg(feature = "record")]
-        if self.record_path.is_some() {
-            self.max_audio_samples = (self.max_mfcc_frames
-                / crate::constants::MFCCS_EXTRACTOR_OUT_SHIFTS)
-                * self.wav_encoder.get_output_frame_length();
-        }
-    }
-
     /// Returns the number of audio samples needed by the detector.
     pub fn get_samples_per_frame(&self) -> usize {
         self.wav_encoder.get_input_frame_length()
@@ -310,6 +250,39 @@ impl Rustpotter {
         let float_samples = self.wav_encoder.rencode_and_resample::<T>(audio_samples);
         self.process_audio(float_samples)
     }
+    /// Updates detector and audio filters configs.
+    ///
+    pub fn update_config(&mut self, config: &RustpotterConfig) {
+        self.update_detector_config(&config.detector);
+        self.update_filters_config(&config.filters);
+    }
+    /// Updates detector config.
+    ///
+    pub fn update_detector_config(&mut self, config: &DetectorConfig) {
+        self.avg_threshold = config.avg_threshold;
+        self.threshold = config.threshold;
+        self.min_scores = config.min_scores;
+        self.eager = config.eager;
+        self.band_size = config.band_size;
+        self.score_ref = config.score_ref;
+        self.score_mode = config.score_mode;
+        self.vad_detector = config.vad_mode.map(VadDetector::new);
+        #[cfg(feature = "record")]
+        {
+            self.record_path = config.record_path;
+        }
+        for wd in self.wakewords.values_mut() {
+            wd.update_config(self.score_ref, self.band_size, self.score_mode);
+        }
+        self.reset();
+    }
+    /// Updates audio filters config.
+    ///
+    pub fn update_filters_config(&mut self, config: &FiltersConfig) {
+        self.band_pass_filter = (&config.band_pass).into();
+        self.gain_normalizer_filter = (&config.gain_normalizer).into();
+        self.reset();
+    }
     /// Clean internal State
     ///
     pub fn reset(&mut self) {
@@ -319,6 +292,54 @@ impl Rustpotter {
         self.mfcc_extractor.reset();
         if let Some(vad) = self.vad_detector.as_mut() {
             vad.reset();
+        }
+        #[cfg(feature = "record")]
+        {
+            self.audio_window.clear();
+        }
+    }
+
+    fn add_wakeword<T: WakewordFile>(&mut self, name: &str, wakeword: T) -> Result<(), String> {
+        if self.wakewords.is_empty() {
+            self.reset();
+            self.mfcc_extractor.set_out_size(wakeword.get_mfcc_size());
+        } else if !self
+            .wakewords
+            .values()
+            .next()
+            .unwrap()
+            .get_mfcc_size()
+            .eq(&wakeword.get_mfcc_size())
+        {
+            return Err(
+                "Usage of wakewords with different mfcc size is not supported, ignoring wakeword"
+                    .to_string(),
+            );
+        }
+        self.wakewords.insert(
+            name.to_string(),
+            wakeword.get_detector(self.score_ref, self.band_size, self.score_mode),
+        );
+        self.on_wakeword_change();
+        Ok(())
+    }
+    fn on_wakeword_change(&mut self) {
+        let mut max_mfcc_frames = usize::MIN;
+        let mut target_rms_level = f32::NAN;
+        for wakeword in self.wakewords.values() {
+            max_mfcc_frames = wakeword.as_ref().get_mfcc_frame_size().max(max_mfcc_frames);
+            target_rms_level = wakeword.get_rms_level().max(target_rms_level);
+        }
+        self.max_mfcc_frames = max_mfcc_frames;
+        if let Some(gain_normalizer_filter) = self.gain_normalizer_filter.as_mut() {
+            gain_normalizer_filter.set_rms_level_ref(target_rms_level, self.max_mfcc_frames / 3);
+        }
+        self.buffering = self.audio_mfcc_window.len() < self.max_mfcc_frames;
+        #[cfg(feature = "record")]
+        if self.record_path.is_some() {
+            self.max_audio_samples = (self.max_mfcc_frames
+                / crate::constants::MFCCS_EXTRACTOR_OUT_SHIFTS)
+                * self.wav_encoder.get_output_frame_length();
         }
     }
     fn process_audio(&mut self, mut audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {

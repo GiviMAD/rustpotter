@@ -8,7 +8,7 @@ use crate::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_PRE_EMPHASIS,
     },
-    Endianness, Sample, SampleFormat, WavFmt,
+    AudioFmt, Endianness, Sample, SampleFormat,
 };
 
 use super::{MfccExtractor, MfccNormalizer};
@@ -90,7 +90,7 @@ fn encode_samples<R: std::io::Read, S: hound::Sample + Sample>(
         })
 }
 
-impl TryFrom<WavSpec> for WavFmt {
+impl TryFrom<WavSpec> for AudioFmt {
     type Error = String;
 
     fn try_from(spec: WavSpec) -> Result<Self, Self::Error> {
@@ -99,7 +99,7 @@ impl TryFrom<WavSpec> for WavFmt {
             hound::SampleFormat::Float => SampleFormat::float_of_size(spec.bits_per_sample),
         };
         if let Some(sample_format) = sample_format {
-            Ok(WavFmt {
+            Ok(AudioFmt {
                 channels: spec.channels,
                 sample_format,
                 sample_rate: spec.sample_rate as usize,

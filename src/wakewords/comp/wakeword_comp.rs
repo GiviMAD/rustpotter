@@ -151,15 +151,16 @@ impl WakewordDetector for WakewordComparator {
         }
     }
 
-    fn contains(&self, name: &str) -> bool {
-        self.name.eq(name)
-    }
-
     fn get_rms_level(&self) -> f32 {
         self.rms_level
     }
 
     fn get_mfcc_size(&self) -> u16 {
         self.samples_features.values().next().unwrap()[0].len() as u16
+    }
+
+    fn update_config(&mut self, score_ref: f32, band_size: u16, score_mode: ScoreMode) {
+        self.score_mode = score_mode;
+        self.mfcc_comparator = MfccComparator::new(score_ref, band_size);
     }
 }

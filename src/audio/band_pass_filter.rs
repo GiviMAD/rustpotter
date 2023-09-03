@@ -1,5 +1,7 @@
 use std::f32::consts::PI;
 
+use crate::{constants::DETECTOR_INTERNAL_SAMPLE_RATE, BandPassConfig};
+
 pub struct BandPassFilter {
     // options
     a0: f32,
@@ -26,7 +28,7 @@ impl BandPassFilter {
             self.y1 = *sample;
         }
     }
-    pub fn new(sample_rate: f32, low_cutoff: f32, high_cutoff: f32) -> BandPassFilter {
+    pub fn new(sample_rate: f32, low_cutoff: f32, high_cutoff: f32) -> Self {
         let omega_low = 2.0 * PI * low_cutoff / sample_rate;
         let omega_high = 2.0 * PI * high_cutoff / sample_rate;
         let cos_omega_low = omega_low.cos();
@@ -38,7 +40,7 @@ impl BandPassFilter {
         let a2 = (1.0 - alpha_high - alpha_low) * a0;
         let b1 = -2.0 * cos_omega_high * a0;
         let b2 = (1.0 - alpha_high + alpha_low) * a0;
-        BandPassFilter {
+        Self {
             a0,
             a1,
             a2,
@@ -51,7 +53,19 @@ impl BandPassFilter {
         }
     }
 }
-
+impl From<&BandPassConfig> for Option<BandPassFilter> {
+    fn from(config: &BandPassConfig) -> Self {
+        if config.enabled {
+            Some(BandPassFilter::new(
+                DETECTOR_INTERNAL_SAMPLE_RATE as f32,
+                config.low_cutoff,
+                config.high_cutoff,
+            ))
+        } else {
+            None
+        }
+    }
+}
 #[test]
 fn filter_audio() {
     let dir = env!("CARGO_MANIFEST_DIR");

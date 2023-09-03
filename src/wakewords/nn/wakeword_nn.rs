@@ -3,7 +3,7 @@ use crate::{
     mfcc::MfccNormalizer,
     wakewords::WakewordDetector,
     wakewords::{ModelWeights, TensorData},
-    ModelType, RustpotterDetection, WakewordModel,
+    ModelType, RustpotterDetection, ScoreMode, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{Linear, Module, VarBuilder, VarMap};
@@ -36,7 +36,7 @@ impl WakewordNN {
         WakewordNN {
             _var_map: var_map,
             model,
-            score_ref,
+            score_ref: score_ref * 10.,
             rms_level: wakeword_model.rms_level,
             labels: wakeword_model.labels.clone(),
             mfcc_frames: wakeword_model.train_size,
@@ -147,19 +147,18 @@ impl WakewordDetector for WakewordNN {
             .and_then(|prob_vec| self.handle_probabilities(prob_vec, avg_threshold != 0.))
             .and_then(|detection| self.validate_scores(detection, threshold, avg_threshold))
     }
-    fn contains(&self, name: &str) -> bool {
-        self.labels.contains(&name.to_string())
-    }
     fn get_rms_level(&self) -> f32 {
         self.rms_level
     }
     fn get_mfcc_size(&self) -> u16 {
         self.mfcc_size
     }
+    fn update_config(&mut self, score_ref: f32, _: u16, _: ScoreMode) {
+        self.score_ref = score_ref * 10.;
+    }
 }
 
 fn calc_inverse_similarity(n1: &f32, n2: &f32, reference: &f32) -> f32 {
-    let reference = reference * 10.;
     1. - (1. / (1. + (((n1 - n2) - reference) / reference).exp()))
 }
 

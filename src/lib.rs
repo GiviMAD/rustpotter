@@ -8,8 +8,8 @@ mod wakewords;
 pub use audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder};
 pub use audio::{Endianness, Sample, SampleFormat};
 pub use config::{
-    BandPassConfig, DetectorConfig, FiltersConfig, GainNormalizationConfig, RustpotterConfig,
-    ScoreMode, VADMode, WavFmt,
+    AudioFmt, BandPassConfig, DetectorConfig, FiltersConfig, GainNormalizationConfig,
+    RustpotterConfig, ScoreMode, VADMode,
 };
 #[cfg(feature = "audio")]
 pub use constants::{DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS};
