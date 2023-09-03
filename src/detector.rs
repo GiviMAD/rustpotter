@@ -38,6 +38,8 @@ pub struct Rustpotter {
     threshold: f32,
     /// Required number of partial scores (scores over threshold) to consider the detection real.
     min_scores: usize,
+    /// Emit detection on min partial scores.
+    eager: bool,
     /// How to calculate the final score.
     score_mode: ScoreMode,
     ///
@@ -128,6 +130,7 @@ impl Rustpotter {
             avg_threshold: config.detector.avg_threshold,
             threshold: config.detector.threshold,
             min_scores: config.detector.min_scores,
+            eager: config.detector.eager,
             score_mode: config.detector.score_mode,
             score_ref: config.detector.score_ref,
             band_size: config.detector.band_size,
@@ -370,7 +373,9 @@ impl Rustpotter {
         if self.detection_countdown != 0 {
             self.detection_countdown -= 1;
         }
-        if self.partial_detection.is_some() && self.detection_countdown == 0 {
+        if self.partial_detection.is_some()
+            && self.is_detection_done(self.partial_detection.as_ref().unwrap())
+        {
             let wakeword_detection = self.partial_detection.take().unwrap();
             if wakeword_detection.counter >= self.min_scores {
                 self.reset();
@@ -399,7 +404,6 @@ impl Rustpotter {
         }
         None
     }
-
     fn run_wakeword_detectors(&mut self) -> Option<RustpotterDetection> {
         let mut wakeword_detections = self
             .wakewords
@@ -414,6 +418,15 @@ impl Rustpotter {
             .collect::<Vec<RustpotterDetection>>();
         wakeword_detections.sort_by(|a, b| b.score.total_cmp(&a.score));
         wakeword_detections.into_iter().next()
+    }
+    fn is_detection_done(&self, detection: &RustpotterDetection) -> bool {
+        if self.detection_countdown == 0 {
+            true
+        } else if self.eager {
+            detection.counter >= self.min_scores
+        } else {
+            false
+        }
     }
     #[cfg(feature = "record")]
     fn create_audio_record(&self, record_path: &str, detection: &RustpotterDetection) {

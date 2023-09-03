@@ -176,6 +176,8 @@ pub struct DetectorConfig {
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
+    /// Emit detection as on min positive scores.
+    pub eager: bool,
     /// Value used to express the score as a percent in range 0 - 1.
     pub score_ref: f32,
     /// Comparator band size. Doesn't apply to wakeword models.
@@ -194,10 +196,11 @@ impl Default for DetectorConfig {
             avg_threshold: DETECTOR_DEFAULT_AVG_THRESHOLD,
             threshold: DETECTOR_DEFAULT_THRESHOLD,
             min_scores: DETECTOR_DEFAULT_MIN_SCORES,
-            score_mode: ScoreMode::Max,
             score_ref: DETECTOR_DEFAULT_REFERENCE,
             band_size: COMPARATOR_DEFAULT_BAND_SIZE,
             vad_mode: None,
+            score_mode: ScoreMode::Max,
+            eager: false,
             #[cfg(feature = "record")]
             record_path: None,
         }

@@ -248,6 +248,24 @@ fn it_can_detect_wakewords_using_trained_model_and_avg_score() {
 }
 
 #[test]
+fn it_can_detect_wakewords_in_eager_mode() {
+    let mut config = RustpotterConfig::default();
+    config.detector.avg_threshold = 0.;
+    config.detector.min_scores = 20;
+    config.detector.eager = true;
+    let detected_wakewords = run_detection_with_audio_file(
+        config,
+        "/tests/resources/ok_casa-tiny.rpw",
+        "/tests/resources/ok_casa.wav",
+    );
+    assert_eq!(detected_wakewords.len(), 1);
+    assert_eq!(detected_wakewords[0].counter, 20);
+    assert_eq!(detected_wakewords[0].avg_score, 0.);
+    assert_eq!(detected_wakewords[0].score, 0.9992142);
+    assert_eq!(detected_wakewords[0].scores["ok_casa"], 23.990948);
+    assert_eq!(detected_wakewords[0].scores["none"], 6.0654087);
+}
+#[test]
 fn it_can_remove_wakeword_by_key() {
     let config = RustpotterConfig::default();
     let mut detector = Rustpotter::new(&config).unwrap();

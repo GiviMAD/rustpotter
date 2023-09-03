@@ -109,7 +109,7 @@ pub trait WakewordModelTrain {
             .map(|m| m.train_size * mfcc_size as usize)
             .unwrap_or_else(|| labeled_mfccs.iter().map(|f| f.0.len()).max().unwrap());
         println!(
-            "Training on {}ms of audio",
+            "Training on {}ms of audio.",
             (input_len / mfcc_size as usize) * 10
         );
         // pad or truncate data
