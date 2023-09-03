@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder},
+    audio::{BandPassFilter, GainNormalizerFilter, AudioEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_PRE_EMPHASIS,
@@ -47,7 +47,7 @@ pub struct Rustpotter {
     vad_detector: Option<VadDetector>,
     // Utils
     /// Utility to encode or re-encode the input wav data.
-    wav_encoder: WAVEncoder,
+    wav_encoder: AudioEncoder,
     /// Utility to extract a collection of mfcc for each input audio frame.
     mfcc_extractor: MfccExtractor,
     /// Score reference for it to be expressed in a 0 - 1 range.
@@ -93,7 +93,7 @@ pub struct Rustpotter {
 impl Rustpotter {
     /// Returns a configured Rustpotter instance.
     pub fn new(config: &RustpotterConfig) -> Result<Rustpotter, String> {
-        let reencoder = WAVEncoder::new(
+        let reencoder = AudioEncoder::new(
             &config.fmt,
             MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
             DETECTOR_INTERNAL_SAMPLE_RATE,

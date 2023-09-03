@@ -3,7 +3,7 @@ use std::io::BufReader;
 use hound::{WavReader, WavSpec};
 
 use crate::{
-    audio::{GainNormalizerFilter, WAVEncoder},
+    audio::{GainNormalizerFilter, AudioEncoder},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_PRE_EMPHASIS,
@@ -22,7 +22,7 @@ impl MfccWavFileExtractor {
     ) -> Result<Vec<Vec<f32>>, String> {
         let wav_reader = WavReader::new(buffer_reader).map_err(|err| err.to_string())?;
         let fmt = wav_reader.spec().try_into()?;
-        let mut encoder = WAVEncoder::new(
+        let mut encoder = AudioEncoder::new(
             &fmt,
             MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
             DETECTOR_INTERNAL_SAMPLE_RATE,
@@ -70,7 +70,7 @@ impl MfccWavFileExtractor {
 
 fn encode_samples<R: std::io::Read, S: hound::Sample + Sample>(
     wav_reader: WavReader<BufReader<R>>,
-    encoder: &mut WAVEncoder,
+    encoder: &mut AudioEncoder,
     rms_levels: &mut Vec<f32>,
 ) -> Vec<f32> {
     let samples = wav_reader

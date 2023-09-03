@@ -5,7 +5,7 @@ mod detector;
 mod mfcc;
 mod wakewords;
 #[cfg(feature = "audio")]
-pub use audio::{BandPassFilter, GainNormalizerFilter, WAVEncoder};
+pub use audio::{BandPassFilter, GainNormalizerFilter, AudioEncoder};
 pub use audio::{Endianness, Sample, SampleFormat};
 pub use config::{
     AudioFmt, BandPassConfig, DetectorConfig, FiltersConfig, GainNormalizationConfig,

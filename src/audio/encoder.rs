@@ -2,10 +2,8 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::{config::AudioFmt, Endianness, Sample, SampleFormat};
 
-/**
- * Encode and convert to wav samples in internal rustpotter format
- */
-pub struct WAVEncoder {
+/// Encode and convert audio to the supported format.
+pub struct AudioEncoder {
     resampler: Option<FftFixedInOut<f32>>,
     resampler_input_buffer: Option<Vec<Vec<f32>>>,
     resampler_out_buffer: Option<Vec<Vec<f32>>>,
@@ -15,7 +13,7 @@ pub struct WAVEncoder {
     input_samples_per_frame: usize,
     output_samples_per_frame: usize,
 }
-impl WAVEncoder {
+impl AudioEncoder {
     pub fn get_input_frame_length(&self) -> usize {
         self.input_samples_per_frame
     }
@@ -66,7 +64,7 @@ impl WAVEncoder {
         input_spec: &AudioFmt,
         frame_length_ms: usize,
         target_sample_rate: usize,
-    ) -> Result<WAVEncoder, &'static str> {
+    ) -> Result<AudioEncoder, &'static str> {
         let mut input_samples_per_frame =
             (input_spec.sample_rate * frame_length_ms / 1000) * input_spec.channels as usize;
         let output_samples_per_frame = target_sample_rate * frame_length_ms / 1000;
@@ -83,7 +81,7 @@ impl WAVEncoder {
         } else {
             None
         };
-        Ok(WAVEncoder {
+        Ok(AudioEncoder {
             input_samples_per_frame,
             output_samples_per_frame,
             resampler_out_buffer: if resampler.is_some() {
@@ -121,7 +119,7 @@ fn it_returns_correct_samples_per_frame() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let file = std::fs::File::open(dir.to_owned() + "/tests/resources/oye_casa_g_1.wav").unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(file)).unwrap();
-    let encoder = WAVEncoder::new(
+    let encoder = AudioEncoder::new(
         &wav_reader.spec().try_into().unwrap(),
         crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
@@ -143,7 +141,7 @@ fn reencode_wav_with_different_format() {
     let i16_samples_file =
         std::fs::File::open(dir.to_owned() + "/tests/resources/oye_casa_g_1.wav").unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(i16_samples_file)).unwrap();
-    let mut encoder = WAVEncoder::new(
+    let mut encoder = AudioEncoder::new(
         &wav_reader.spec().try_into().unwrap(),
         crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
