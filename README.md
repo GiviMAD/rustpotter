@@ -8,11 +8,11 @@
 
 ## Overview
 
-The aim of this project is to detect specific keywords in a live audio stream.
+The aim of this project is to detect specific wakeword in a live audio stream.
 
 Rustpotter allows two detection methods, both based on using the [mel frequency cepstral coeﬃcients (mfccs)](https://en.wikipedia.org/wiki/Mel-frequency_cepstrum) of the audio, exposed as the two kind of wakewords:
 
-- Wakeword References: When using this kind of wakeword rustpotter does the detection by measuring the similarity of live stream audio mfccs with the mfccs of the records used to build the wakeword reference, using the [dynamic time warping](https://en.wikipedia.org/wiki/Dynamic_time_warping) algorithm.
+- Wakeword References: When using this kind of wakeword rustpotter does the detection by measuring the similarity of the live stream audio mfccs with the mfccs of the records used to build the wakeword reference, using the [dynamic time warping](https://en.wikipedia.org/wiki/Dynamic_time_warping) algorithm.
 Creating a functional wakeword reference requires 3 to 8 wav records.
 Computation increases based on the number of records used to create the wakeword reference.
 It has less accuracy than a wakeword model trained with enough data.
@@ -21,6 +21,15 @@ It has less accuracy than a wakeword model trained with enough data.
 Training a functional wakeword model requires a training and testing sets of wav records which need to be tagged (contains [label] in its file name, where 'label' is the tag the network should predict for that audio segment) or untagged (equivalent to contain [none] on the filename).
 The size of the wakeword model is based on the model type you choose, and the audio duration it was trained on (which is defined by the max audio duration found on the training set).
 When trained with enough data, all models types offer a pretty good experience (very low missing or false detections).
+
+
+## Libraries
+
+You can use rustpotter on several platforms through different programming interfaces.
+
+* [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `terminal`. (pre-build binaries for Window, macOs and Linux)
+* [rustpotter-java](https://github.com/GiviMAD/rustpotter-java): Use Rustpotter on `Java`. (Available on Maven with support for Window, macOs and Linux)
+* [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter in the `browser` as a Web Audio API processor node.
 
 ## Audio Format Support
 
@@ -160,12 +169,6 @@ These filters are disabled by default, and their main purpose is to improve the 
 
 Please note that `both run entirely on your browser, your voice is not sent anywhere`, they are hosted using Github Pages.
 
-## Related projects
-
-* [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `terminal`. (Window, macOs and Linux).
-* [rustpotter-java](https://github.com/GiviMAD/rustpotter-java): Use Rustpotter on `Java`. (Mvn package and generator)
-* [rustpotter-web](https://www.npmjs.com/package/rustpotter-web): Use Rustpotter on `JavaScript`. (Npm package generated with [rustpotter-wasm](https://github.com/GiviMAD/rustpotter-wasm))
-* [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter in the `browser` as a Web Audio API processor node.
 
 ## Changelog overview
 
