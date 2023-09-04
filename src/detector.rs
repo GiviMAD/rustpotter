@@ -231,11 +231,10 @@ impl Rustpotter {
     ///
     /// Number of bytes provided should match the return of the get_bytes_per_frame method.
     ///
-    /// Assumes sample rate match the configured for the detector.
-    ///
-    /// Assumes buffer endianness matches the configured for the detector.
-    ///
     pub fn process_bytes(&mut self, audio_bytes: &[u8]) -> Option<RustpotterDetection> {
+        if audio_bytes.len() != self.get_bytes_per_frame() {
+            return None;
+        }
         let encoded_samples = self.wav_encoder.encode_and_resample(audio_bytes);
         self.process_audio(encoded_samples)
     }
@@ -247,6 +246,9 @@ impl Rustpotter {
         &mut self,
         audio_samples: Vec<T>,
     ) -> Option<RustpotterDetection> {
+        if audio_samples.len() != self.get_samples_per_frame() {
+            return None;
+        }
         let float_samples = self.wav_encoder.rencode_and_resample::<T>(audio_samples);
         self.process_audio(float_samples)
     }
@@ -343,6 +345,9 @@ impl Rustpotter {
         }
     }
     fn process_audio(&mut self, mut audio_buffer: Vec<f32>) -> Option<RustpotterDetection> {
+        if self.wakewords.is_empty() {
+            return None;
+        }
         #[cfg(feature = "record")]
         if self.record_path.is_some() {
             self.audio_window.append(&mut (audio_buffer.clone()));
