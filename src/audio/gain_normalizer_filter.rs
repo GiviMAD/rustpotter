@@ -1,3 +1,5 @@
+use crate::GainNormalizationConfig;
+
 pub struct GainNormalizerFilter {
     window_size: usize,
     fixed_rms_level: bool,
@@ -51,8 +53,8 @@ impl GainNormalizerFilter {
         }
         (sum_squared / signal.len() as f32).sqrt()
     }
-    pub fn new(min_gain: f32, max_gain: f32, fixed_rms_level: Option<f32>) -> GainNormalizerFilter {
-        GainNormalizerFilter {
+    pub fn new(min_gain: f32, max_gain: f32, fixed_rms_level: Option<f32>) -> Self {
+        Self {
             min_gain,
             max_gain,
             rms_level_ref: fixed_rms_level.unwrap_or(f32::NAN),
@@ -63,24 +65,28 @@ impl GainNormalizerFilter {
         }
     }
 }
-
+impl From<&GainNormalizationConfig> for Option<GainNormalizerFilter> {
+    fn from(config: &GainNormalizationConfig) -> Self {
+        if config.enabled {
+            Some(GainNormalizerFilter::new(
+                config.min_gain,
+                config.max_gain,
+                config.gain_ref,
+            ))
+        } else {
+            None
+        }
+    }
+}
 #[test]
 fn filter_audio() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let sample_file =
         std::fs::File::open(dir.to_owned() + "/tests/resources/real_sample.wav").unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(sample_file)).unwrap();
-    let wav_spec = crate::WavFmt {
-        sample_rate: wav_reader.spec().sample_rate as usize,
-        sample_format: wav_reader.spec().sample_format,
-        bits_per_sample: wav_reader.spec().bits_per_sample,
-        channels: wav_reader.spec().channels,
-        endianness: crate::Endianness::Little,
-    };
-    println!("{:?}", wav_spec);
-    let mut encoder = crate::internal::WAVEncoder::new(
-        &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+    let mut encoder = crate::audio::AudioEncoder::new(
+        &wav_reader.spec().try_into().unwrap(),
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
@@ -110,7 +116,7 @@ fn filter_audio() {
     let mut filter = GainNormalizerFilter::new(0.1, 1., Some(0.003));
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
         .map(|mut chunk| {
             let rms_level = GainNormalizerFilter::get_rms_level(&chunk);
             filter.filter(&mut chunk, rms_level);

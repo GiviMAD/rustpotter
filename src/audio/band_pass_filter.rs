@@ -1,4 +1,7 @@
 use std::f32::consts::PI;
+
+use crate::{constants::DETECTOR_INTERNAL_SAMPLE_RATE, BandPassConfig};
+
 pub struct BandPassFilter {
     // options
     a0: f32,
@@ -25,7 +28,7 @@ impl BandPassFilter {
             self.y1 = *sample;
         }
     }
-    pub fn new(sample_rate: f32, low_cutoff: f32, high_cutoff: f32) -> BandPassFilter {
+    pub fn new(sample_rate: f32, low_cutoff: f32, high_cutoff: f32) -> Self {
         let omega_low = 2.0 * PI * low_cutoff / sample_rate;
         let omega_high = 2.0 * PI * high_cutoff / sample_rate;
         let cos_omega_low = omega_low.cos();
@@ -37,7 +40,7 @@ impl BandPassFilter {
         let a2 = (1.0 - alpha_high - alpha_low) * a0;
         let b1 = -2.0 * cos_omega_high * a0;
         let b2 = (1.0 - alpha_high + alpha_low) * a0;
-        BandPassFilter {
+        Self {
             a0,
             a1,
             a2,
@@ -50,24 +53,28 @@ impl BandPassFilter {
         }
     }
 }
-
+impl From<&BandPassConfig> for Option<BandPassFilter> {
+    fn from(config: &BandPassConfig) -> Self {
+        if config.enabled {
+            Some(BandPassFilter::new(
+                DETECTOR_INTERNAL_SAMPLE_RATE as f32,
+                config.low_cutoff,
+                config.high_cutoff,
+            ))
+        } else {
+            None
+        }
+    }
+}
 #[test]
 fn filter_audio() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let sample_file =
         std::fs::File::open(dir.to_owned() + "/tests/resources/real_sample.wav").unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(sample_file)).unwrap();
-    let wav_spec = crate::WavFmt {
-        sample_rate: wav_reader.spec().sample_rate as usize,
-        sample_format: wav_reader.spec().sample_format,
-        bits_per_sample: wav_reader.spec().bits_per_sample,
-        channels: wav_reader.spec().channels,
-        endianness: crate::Endianness::Little,
-    };
-    println!("{:?}", wav_spec);
-    let mut encoder = crate::internal::WAVEncoder::new(
-        &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+    let mut encoder = crate::audio::AudioEncoder::new(
+        &wav_reader.spec().try_into().unwrap(),
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
@@ -94,10 +101,14 @@ fn filter_audio() {
         internal_spec,
     )
     .unwrap();
-    let mut filter = BandPassFilter::new(crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    let mut filter = BandPassFilter::new(
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32,
+        80.,
+        400.,
+    );
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
         .map(|mut chunk| {
             filter.filter(&mut chunk);
             chunk
@@ -116,17 +127,9 @@ fn filter_gain_normalized_audio() {
     let sample_file =
         std::fs::File::open(dir.to_owned() + "/tests/resources/real_sample.wav").unwrap();
     let wav_reader = hound::WavReader::new(std::io::BufReader::new(sample_file)).unwrap();
-    let wav_spec = crate::WavFmt {
-        sample_rate: wav_reader.spec().sample_rate as usize,
-        sample_format: wav_reader.spec().sample_format,
-        bits_per_sample: wav_reader.spec().bits_per_sample,
-        channels: wav_reader.spec().channels,
-        endianness: crate::Endianness::Little,
-    };
-    println!("{:?}", wav_spec);
-    let mut encoder = crate::internal::WAVEncoder::new(
-        &wav_spec,
-        crate::constants::FEATURE_EXTRACTOR_FRAME_LENGTH_MS,
+    let mut encoder = crate::audio::AudioEncoder::new(
+        &wav_reader.spec().try_into().unwrap(),
+        crate::constants::MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE,
     )
     .unwrap();
@@ -153,13 +156,17 @@ fn filter_gain_normalized_audio() {
         internal_spec,
     )
     .unwrap();
-    let mut gain_filter = crate::internal::GainNormalizerFilter::new(0.1, 1., Some(0.003));
-    let mut filter = BandPassFilter::new(crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32, 80., 400.);
+    let mut gain_filter = crate::audio::GainNormalizerFilter::new(0.1, 1., Some(0.003));
+    let mut filter = BandPassFilter::new(
+        crate::constants::DETECTOR_INTERNAL_SAMPLE_RATE as f32,
+        80.,
+        400.,
+    );
     samples
         .chunks_exact(encoder.get_input_frame_length())
-        .map(|chuck| encoder.reencode_float(chuck))
+        .map(|chuck| encoder.rencode_and_resample::<f32>(chuck.into()))
         .map(|mut chunk| {
-            let rms_level = crate::internal::GainNormalizerFilter::get_rms_level(&chunk);
+            let rms_level = crate::audio::GainNormalizerFilter::get_rms_level(&chunk);
             gain_filter.filter(&mut chunk, rms_level);
             filter.filter(&mut chunk);
             chunk

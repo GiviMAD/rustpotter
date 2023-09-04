@@ -1,31 +1,30 @@
 use super::Dtw;
 use std::cmp;
 
-pub struct FeatureComparator {
+pub struct MfccComparator {
+    score_ref: f32,
     band_size: u16,
-    reference: f32,
 }
-impl FeatureComparator {
-    pub fn new(band_size: u16, reference: f32) -> Self {
-        FeatureComparator {
+impl MfccComparator {
+    pub fn new(score_ref: f32, band_size: u16) -> Self {
+        MfccComparator {
+            score_ref,
             band_size,
-            reference,
         }
     }
     pub fn calculate_distance(ax: &[f32], bx: &[f32]) -> f32 {
         1. - cosine_similarity(ax, bx)
     }
     pub fn compare(&self, a: &[&[f32]], b: &[&[f32]]) -> f32 {
-        let mut dtw = Dtw::new(FeatureComparator::calculate_distance);
+        let mut dtw = Dtw::new(MfccComparator::calculate_distance);
         let cost = dtw.compute_optimal_path_with_window(a, b, self.band_size);
         let normalized_cost = cost / (a.len() + b.len()) as f32;
         self.compute_probability(normalized_cost)
     }
     fn compute_probability(&self, cost: f32) -> f32 {
-        1. / (1. + ((cost - self.reference) / self.reference).exp())
+        1. / (1. + ((cost - self.score_ref) / self.score_ref).exp())
     }
 }
-
 pub fn cosine_similarity(vector_a: &[f32], vector_b: &[f32]) -> f32 {
     let dimensionality = cmp::min(vector_a.len(), vector_b.len());
     let mut dot_ab = 0.;

@@ -2,47 +2,62 @@ use std::f32::consts::PI;
 
 use rustfft::{num_complex::Complex32, FftPlanner};
 
-pub struct FeatureExtractor {
+pub struct MfccExtractor {
     num_coefficients: usize,
     pre_emphasis_coefficient: f32,
     samples_per_frame: usize,
     samples_per_shift: usize,
     magnitude_spectrum_size: usize,
+    sample_rate: usize,
+    // state
     filter_bank: Vec<Vec<f32>>,
     hamming_window: Vec<f32>,
-    // state
     samples: Vec<f32>,
 }
 
-impl FeatureExtractor {
+impl MfccExtractor {
     pub fn new(
         sample_rate: usize,
         samples_per_frame: usize,
         samples_per_shift: usize,
-        num_coefficients: usize,
+        num_coefficients: u16,
         pre_emphasis_coefficient: f32,
-    ) -> FeatureExtractor {
+    ) -> MfccExtractor {
         let min_frequency = 0;
         let max_frequency = sample_rate / 2;
         let magnitude_spectrum_size = samples_per_frame / 2;
-        FeatureExtractor {
+        MfccExtractor {
             samples: vec![],
             samples_per_shift,
             samples_per_frame,
             pre_emphasis_coefficient,
-            num_coefficients,
+            num_coefficients: num_coefficients as usize,
             magnitude_spectrum_size,
             filter_bank: Self::new_mel_filter_bank(
                 sample_rate,
                 magnitude_spectrum_size,
-                num_coefficients,
+                num_coefficients as usize,
                 min_frequency,
                 max_frequency,
             ),
             hamming_window: Self::new_hamming_window(samples_per_frame),
+            sample_rate,
         }
     }
-    pub fn compute_features(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
+    pub fn set_out_size(&mut self, out_size: u16) {
+        self.num_coefficients = (out_size + 1) as usize; // first coefficient is dropped
+        let min_frequency = 0;
+        let max_frequency = self.sample_rate / 2;
+        self.filter_bank = Self::new_mel_filter_bank(
+            self.sample_rate,
+            self.magnitude_spectrum_size,
+            self.num_coefficients,
+            min_frequency,
+            max_frequency,
+        );
+        self.reset();
+    }
+    pub fn compute(&mut self, audio_samples: &[f32]) -> Vec<Vec<f32>> {
         audio_samples
             .chunks_exact(self.samples_per_shift)
             .filter_map(|audio_part| self.process_audio_part(audio_part))
@@ -56,18 +71,18 @@ impl FeatureExtractor {
         if self.samples.len() >= self.samples_per_frame {
             self.samples.drain(0..new_samples.len());
             self.samples.append(&mut new_samples);
-            let features = self.extract_features(&self.samples[0..self.samples_per_frame]);
-            Some(features)
+            Some(self.extract_mfccs(&self.samples[0..self.samples_per_frame]))
         } else {
             self.samples.append(&mut new_samples);
             None
         }
     }
-    fn extract_features(&self, samples: &[f32]) -> Vec<f32> {
+    fn extract_mfccs(&self, samples: &[f32]) -> Vec<f32> {
         let magnitude_spectrum = self.calculate_magnitude_spectrum(samples);
-        let mut features = self.calculate_mel_frequency_cepstral_coefficients(&magnitude_spectrum);
-        features.drain(0..1);
-        features
+        let mut mfcc_frame =
+            self.calculate_mel_frequency_cepstral_coefficients(&magnitude_spectrum);
+        mfcc_frame.drain(0..1);
+        mfcc_frame
     }
     fn pre_emphasis(&self, audio_buffer: &[f32]) -> Vec<f32> {
         let mut tmp_sample = 0.;

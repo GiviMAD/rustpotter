@@ -1,40 +1,27 @@
-use crate::constants::{
-    DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES, DETECTOR_DEFAULT_THRESHOLD,
-    DETECTOR_INTERNAL_SAMPLE_RATE, FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-    FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+use crate::{
+    audio::{Endianness, SampleFormat},
+    constants::{
+        COMPARATOR_DEFAULT_BAND_SIZE, DETECTOR_DEFAULT_AVG_THRESHOLD, DETECTOR_DEFAULT_MIN_SCORES,
+        DETECTOR_DEFAULT_REFERENCE, DETECTOR_DEFAULT_THRESHOLD, DETECTOR_INTERNAL_SAMPLE_RATE,
+    },
 };
-
-/// Indicates the byte endianness
-#[cfg_attr(feature = "debug", derive(Debug))]
-#[derive(Clone, Copy)]
-pub enum Endianness {
-    Big,
-    Little,
-    Native,
-}
-/// Supported sample formats
-pub type SampleFormat = hound::SampleFormat;
-
 /// Wav format representation
 #[cfg_attr(feature = "debug", derive(Debug))]
-pub struct WavFmt {
+pub struct AudioFmt {
     /// Indicates the sample rate of the input audio stream.
     pub sample_rate: usize,
-    /// Indicates the sample format used to encode the input audio stream bytes.
+    /// Indicates the sample type and its bit size. It's only used when the audio is provided as bytes.
     pub sample_format: SampleFormat,
-    /// Indicates the bit depth used to encode the input audio stream bytes.
-    pub bits_per_sample: u16,
     /// Indicates the number of channels of the input audio stream.
     pub channels: u16,
     /// Input the sample endianness used to encode the input audio stream bytes.
     pub endianness: Endianness,
 }
-impl Default for WavFmt {
-    fn default() -> WavFmt {
-        WavFmt {
+impl Default for AudioFmt {
+    fn default() -> AudioFmt {
+        AudioFmt {
             sample_rate: DETECTOR_INTERNAL_SAMPLE_RATE,
-            sample_format: hound::SampleFormat::Float,
-            bits_per_sample: 32,
+            sample_format: SampleFormat::F32,
             channels: 1,
             endianness: Endianness::Little,
         }
@@ -107,6 +94,79 @@ pub enum ScoreMode {
     P90,
     P95,
 }
+#[cfg(feature = "display")]
+impl std::fmt::Display for ScoreMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            ScoreMode::Average => write!(f, "average"),
+            ScoreMode::Max => write!(f, "max"),
+            ScoreMode::Median => write!(f, "median"),
+            ScoreMode::P25 => write!(f, "p25"),
+            ScoreMode::P50 => write!(f, "p50"),
+            ScoreMode::P75 => write!(f, "p75"),
+            ScoreMode::P80 => write!(f, "p80"),
+            ScoreMode::P90 => write!(f, "p90"),
+            ScoreMode::P95 => write!(f, "p95"),
+        }
+    }
+}
+#[cfg(feature = "display")]
+impl std::str::FromStr for ScoreMode {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "average" => Ok(Self::Average),
+            "max" => Ok(Self::Max),
+            "median" => Ok(Self::Median),
+            "p25" => Ok(Self::P25),
+            "p50" => Ok(Self::P50),
+            "p75" => Ok(Self::P75),
+            "p80" => Ok(Self::P80),
+            "p90" => Ok(Self::P90),
+            "p95" => Ok(Self::P95),
+            _ => Err("Unknown score mode".to_string()),
+        }
+    }
+}
+/// Configures VAD detector sensibility.
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy)]
+pub enum VADMode {
+    Easy,
+    Medium,
+    Hard,
+}
+impl VADMode {
+    pub(crate) fn get_value(&self) -> f32 {
+        match &self {
+            VADMode::Easy => 7.5,
+            VADMode::Medium => 10.,
+            VADMode::Hard => 12.5,
+        }
+    }
+}
+#[cfg(feature = "display")]
+impl std::fmt::Display for VADMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            VADMode::Easy => write!(f, "easy"),
+            VADMode::Medium => write!(f, "medium"),
+            VADMode::Hard => write!(f, "hard"),
+        }
+    }
+}
+#[cfg(feature = "display")]
+impl std::str::FromStr for VADMode {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "easy" => Ok(Self::Easy),
+            "medium" => Ok(Self::Medium),
+            "hard" => Ok(Self::Hard),
+            _ => Err("Unknown vad mode".to_string()),
+        }
+    }
+}
 /// Configures the detector scoring behavior.
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct DetectorConfig {
@@ -116,12 +176,19 @@ pub struct DetectorConfig {
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
-    /// How to calculate a unified score.
+    /// Emit detection on min partial scores.
+    pub eager: bool,
+    /// Value used to express the score as a percent in range 0 - 1.
+    pub score_ref: f32,
+    /// Comparator band size. Doesn't apply to wakeword models.
+    pub band_size: u16,
+    /// How to calculate a unified score. Doesn't apply to wakeword models.
     pub score_mode: ScoreMode,
-    /// Feature comparator band size.
-    pub comparator_band_size: u16,
-    /// Feature comparator reference. (Used to express the similarity as a percent)
-    pub comparator_ref: f32,
+    /// How to calculate a unified score. Doesn't apply to wakeword models.
+    pub vad_mode: Option<VADMode>,
+    #[cfg(feature = "record")]
+    /// Path to create records, one on the first partial detection and another each one that scores better.
+    pub record_path: Option<String>,
 }
 impl Default for DetectorConfig {
     fn default() -> DetectorConfig {
@@ -129,9 +196,13 @@ impl Default for DetectorConfig {
             avg_threshold: DETECTOR_DEFAULT_AVG_THRESHOLD,
             threshold: DETECTOR_DEFAULT_THRESHOLD,
             min_scores: DETECTOR_DEFAULT_MIN_SCORES,
+            score_ref: DETECTOR_DEFAULT_REFERENCE,
+            band_size: COMPARATOR_DEFAULT_BAND_SIZE,
+            vad_mode: None,
             score_mode: ScoreMode::Max,
-            comparator_band_size: FEATURE_COMPARATOR_DEFAULT_BAND_SIZE,
-            comparator_ref: FEATURE_COMPARATOR_DEFAULT_REFERENCE,
+            eager: false,
+            #[cfg(feature = "record")]
+            record_path: None,
         }
     }
 }
@@ -140,10 +211,9 @@ impl Default for DetectorConfig {
 #[derive(Default)]
 pub struct RustpotterConfig {
     /// configures expected wav input format.
-    pub fmt: WavFmt,
+    pub fmt: AudioFmt,
     /// Configures detection.
     pub detector: DetectorConfig,
     /// Configures input audio filters.
     pub filters: FiltersConfig,
 }
-
