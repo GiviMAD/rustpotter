@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    audio::{BandPassFilter, GainNormalizerFilter, AudioEncoder},
+    audio::{AudioEncoder, BandPassFilter, GainNormalizerFilter},
     constants::{
         DETECTOR_INTERNAL_SAMPLE_RATE, MFCCS_EXTRACTOR_FRAME_LENGTH_MS,
         MFCCS_EXTRACTOR_FRAME_SHIFT_MS, MFCCS_EXTRACTOR_PRE_EMPHASIS,
@@ -271,7 +271,7 @@ impl Rustpotter {
         self.vad_detector = config.vad_mode.map(VadDetector::new);
         #[cfg(feature = "record")]
         {
-            self.record_path = config.record_path;
+            self.record_path = config.record_path.clone();
         }
         for wd in self.wakewords.values_mut() {
             wd.update_config(self.score_ref, self.band_size, self.score_mode);
@@ -448,10 +448,8 @@ impl Rustpotter {
     fn is_detection_done(&self, detection: &RustpotterDetection) -> bool {
         if self.detection_countdown == 0 {
             true
-        } else if self.eager {
-            detection.counter >= self.min_scores
         } else {
-            false
+            self.eager && detection.counter >= self.min_scores
         }
     }
     #[cfg(feature = "record")]

@@ -176,7 +176,7 @@ pub struct DetectorConfig {
     pub threshold: f32,
     /// Minimum number of positive scores during detection.
     pub min_scores: usize,
-    /// Emit detection as on min positive scores.
+    /// Emit detection on min partial scores.
     pub eager: bool,
     /// Value used to express the score as a percent in range 0 - 1.
     pub score_ref: f32,
