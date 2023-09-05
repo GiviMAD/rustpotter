@@ -210,7 +210,7 @@ impl Default for DetectorConfig {
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Default)]
 pub struct RustpotterConfig {
-    /// configures expected wav input format.
+    /// Configures expected audio input format.
     pub fmt: AudioFmt,
     /// Configures detection.
     pub detector: DetectorConfig,

@@ -8,7 +8,7 @@
 
 ## Overview
 
-The aim of this project is to detect specific wakeword in a live audio stream.
+The aim of this project is to detect specific wakewords in a live audio stream.
 
 Rustpotter allows two detection methods, both based on using the [mel frequency cepstral coeﬃcients (mfccs)](https://en.wikipedia.org/wiki/Mel-frequency_cepstrum) of the audio, exposed as the two kind of wakewords:
 
@@ -27,7 +27,7 @@ When trained with enough data, all models types offer a pretty good experience (
 
 You can use rustpotter on several platforms through different programming interfaces.
 
-* [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `terminal`. (pre-build binaries for Window, macOs and Linux)
+* [rustpotter-cli](https://github.com/GiviMAD/rustpotter-cli): Use Rustpotter on the `command line`. (pre-build binaries for Window, macOs and Linux)
 * [rustpotter-java](https://github.com/GiviMAD/rustpotter-java): Use Rustpotter on `Java`. (Available on Maven with support for Window, macOs and Linux)
 * [rustpotter-worklet](https://github.com/GiviMAD/rustpotter-worklet): Use Rustpotter in the `browser` as a Web Audio API processor node.
 
