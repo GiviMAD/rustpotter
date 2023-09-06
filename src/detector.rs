@@ -338,7 +338,7 @@ impl Rustpotter {
         }
         self.buffering = self.audio_mfcc_window.len() < self.max_mfcc_frames;
         #[cfg(feature = "record")]
-        if self.record_path.is_some() {
+        {
             self.max_audio_samples = (self.max_mfcc_frames
                 / crate::constants::MFCCS_EXTRACTOR_OUT_SHIFTS)
                 * self.wav_encoder.get_output_frame_length();

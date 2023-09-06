@@ -9,7 +9,7 @@ pub struct VadDetector {
 }
 impl VadDetector {
     pub fn is_voice(&mut self, mfcc: &[f32]) -> bool {
-        let value: f32 = mfcc.iter().map(|v| v * v).sum::<f32>() / mfcc.len() as f32;
+        let value: f32 = mfcc.iter().map(|v| v.abs()).sum::<f32>() / mfcc.len() as f32;
         self.window[self.index] = value;
         self.index = if self.index >= self.window.len() - 1 {
             0
@@ -21,11 +21,11 @@ impl VadDetector {
             .iter()
             .filter(|i| !i.is_nan())
             .min_by(|a, b| a.total_cmp(b))
-            .unwrap();
+            .unwrap().max(0.01);
         let th = min * self.mode.get_value();
         let n_high_frames = self.window.iter().filter(|v| **v > th).count();
         if n_high_frames > 10 {
-            self.voice_countdown = 100;
+            self.voice_countdown = 500;
         }
         if self.voice_countdown > 0 {
             self.voice_countdown -= 1;

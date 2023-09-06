@@ -139,9 +139,9 @@ pub enum VADMode {
 impl VADMode {
     pub(crate) fn get_value(&self) -> f32 {
         match &self {
-            VADMode::Easy => 7.5,
-            VADMode::Medium => 10.,
-            VADMode::Hard => 12.5,
+            VADMode::Easy => 2.,
+            VADMode::Medium => 2.5,
+            VADMode::Hard => 3.,
         }
     }
 }
