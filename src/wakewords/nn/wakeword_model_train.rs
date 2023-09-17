@@ -8,6 +8,7 @@ use crate::{
     ModelType, WakewordModel,
 };
 use candle_core::{DType, Device, Tensor, D};
+use candle_nn::Optimizer;
 use candle_nn::{loss, ops, VarMap};
 use std::{
     collections::HashMap,
@@ -193,7 +194,7 @@ fn training_loop<M: ModelImpl + 'static>(
         m.labels,
         wakeword.as_ref(),
     )?;
-    let sgd = candle_nn::SGD::new(var_map.all_vars(), args.learning_rate);
+    let mut sgd = candle_nn::SGD::new(var_map.all_vars(), args.learning_rate).unwrap();
     let test_features = m.test_features.to_device(&dev)?;
     let test_labels = m.test_labels.to_dtype(DType::U32)?.to_device(&dev)?;
     if from_wakeword {
