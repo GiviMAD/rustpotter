@@ -28,9 +28,9 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "candle-core"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d54bfcd86ef61f5ceb73aa43a49d08e395503e6c79f12ae8f5ed4695dd33b84e"
+checksum = "dde6b117b2e56ee68959aad0cb5fdfe65f39328c8c82e5bd356a6b95ade471c7"
 dependencies = [
  "byteorder",
  "candle-gemm",
@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26b726a1f6cdd7ff080e95e3d91694701b1e04a58acd198e4a78c39428b2274e"
+checksum = "ef9b07a4b0ba1a304b44432006580980ddff9748c201261c279437e7b11bba68"
 dependencies = [
  "candle-gemm-c32",
  "candle-gemm-c64",
@@ -70,9 +70,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm-c32"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "661470663389f0c99fd8449e620bfae630a662739f830a323eda4dcf80888843"
+checksum = "f595241dad99811de285e029889f57c29dd98e33de7a8a6b881867b1488d7d4a"
 dependencies = [
  "candle-gemm-common",
  "dyn-stack",
@@ -87,9 +87,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm-c64"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a111ddf61db562854a6d2ff4dfe1e8a84066431b7bc68d3afae4bf60874fda0"
+checksum = "648f22fd8f5a4f330e29d791845b514966421308a6a2b5fedb949ee07e54c77f"
 dependencies = [
  "candle-gemm-common",
  "dyn-stack",
@@ -104,9 +104,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm-common"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a6dd93783ead7eeef14361667ea32014dc6f716a2fc956b075fe78729e10dd5"
+checksum = "e03c01b4ca3b9d71e4eb89e42946a08f8b0d2f1b861f7fa2ea0966233f1e0b08"
 dependencies = [
  "dyn-stack",
  "lazy_static",
@@ -120,9 +120,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm-f16"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b76499bf4b858cacc526c5c8f948bc7152774247dce8568f174b743ab1363fa4"
+checksum = "97f8af2a482131713d28a337abff6debf26c529afa1837caf2ba190909b2107c"
 dependencies = [
  "candle-gemm-common",
  "candle-gemm-f32",
@@ -139,9 +139,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm-f32"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bec152e7d36339d3785e0d746d75ee94a4e92968fbb12ddcc91b536b938d016"
+checksum = "938927961e2f0c0a6064fcf3524ea3f7f455fe5708419532a6fea9aea1ab45ae"
 dependencies = [
  "candle-gemm-common",
  "dyn-stack",
@@ -156,9 +156,9 @@ dependencies = [
 
 [[package]]
 name = "candle-gemm-f64"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00f59ac68a5521e2ff71431bb7f1b22126ff0b60c5e66599b1f4676433da6e69"
+checksum = "d192d7126e59b81ef4cf13cd9f194e6dbdc09171f65d0074d059dc009ac06775"
 dependencies = [
  "candle-gemm-common",
  "dyn-stack",
@@ -173,15 +173,16 @@ dependencies = [
 
 [[package]]
 name = "candle-nn"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f6eb07d8734b7f288b6c518d9a284167cda2a307dbbdbc610350aa7e8fa8729"
+checksum = "1f65727276854c62e0d5b65e9e71b491d055477964943816e04da7dcda33852c"
 dependencies = [
  "candle-core",
  "half 2.3.1",
  "num-traits",
  "rayon",
  "safetensors",
+ "serde",
  "thiserror",
 ]
 
@@ -225,16 +226,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b540bd8bc810d3885c6ea91e2018302f68baba2129ab3e88f32389ee9370880d"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "crossbeam-channel"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a33c2bf77f2df06183c3aa30d1e96c0695a313d4f9c453cc3762a6db39f99200"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
 ]
 
 [[package]]
@@ -324,15 +315,15 @@ dependencies = [
 
 [[package]]
 name = "hermit-abi"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "443144c8cdadd93ebf52ddb4056d257f5b52c04d3c804e657d19eb73fc33668b"
+checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 
 [[package]]
 name = "hound"
-version = "3.5.0"
+version = "3.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d13cdbd5dbb29f9c88095bbdc2590c9cba0d0a1269b983fef6b2cdd7e9f4db1"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "itoa"
@@ -348,9 +339,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.147"
+version = "0.2.148"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
+checksum = "9cdc71e17332e86d2e1d38c1f99edcb6288ee11b815fb1a4b049eaa2114d369b"
 
 [[package]]
 name = "libm"
@@ -438,9 +429,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.66"
+version = "1.0.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
+checksum = "3d433d9f1a3e8c1263d9456598b16fec66f4acc9a74dacffd35c7bb09b3a1328"
 dependencies = [
  "unicode-ident",
 ]
@@ -505,9 +496,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d2df5196e37bcc87abebc0053e20787d73847bb33134a69841207dd0a47f03b"
+checksum = "9c27db03db7734835b3f53954b534c91069375ce6ccaa2e065441e07d9b6cdb1"
 dependencies = [
  "either",
  "rayon-core",
@@ -515,14 +506,12 @@ dependencies = [
 
 [[package]]
 name = "rayon-core"
-version = "1.11.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b8f95bd6966f5c87776639160a66bd8ab9895d9d4ab01ddba9fc60661aebe8d"
+checksum = "5ce3fb6ad83f861aac485e76e1985cd109d9a3713802152be56c3b1f0e0658ed"
 dependencies = [
- "crossbeam-channel",
  "crossbeam-deque",
  "crossbeam-utils",
- "num_cpus",
 ]
 
 [[package]]
@@ -569,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "rustpotter"
-version = "3.0.1"
+version = "3.0.2"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -630,9 +619,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.105"
+version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "693151e1ac27563d6dbcec9dee9fbd5da8539b20fa14ad3752b2e6d363ace360"
+checksum = "6b420ce6e3d8bd882e9b243c6eed35dbc9a6110c9769e74b584e0d68d1f20c65"
 dependencies = [
  "itoa",
  "ryu",
@@ -647,9 +636,9 @@ checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
 
 [[package]]
 name = "syn"
-version = "2.0.31"
+version = "2.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "718fa2415bcb8d8bd775917a1bf12a7931b6dfa890753378538118181e0cb398"
+checksum = "7303ef2c05cd654186cb250d29049a24840ca25d2747c25c0381c8d9e2f582e8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -658,18 +647,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.48"
+version = "1.0.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d6d7a740b8a666a7e828dd00da9c0dc290dff53154ea77ac109281de90589b7"
+checksum = "1177e8c6d7ede7afde3585fd2513e611227efd6481bd78d2e82ba1ce16557ed4"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.48"
+version = "1.0.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49922ecae66cc8a249b77e68d1d0623c1b2c514f0060c27cdc68bd62a1219d35"
+checksum = "10712f02019e9288794769fba95cd6847df9874d49d871d062172f9dd41bc4cc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -688,9 +677,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.11"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
+checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
 
 [[package]]
 name = "version_check"
